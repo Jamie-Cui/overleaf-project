@@ -1,0 +1,290 @@
+:PROPERTIES:
+:ID:       9d694771-66a1-46dc-873a-858289333e3d
+:END:
+#+title: overleaf-project
+
+Chinese README: [[file:README.zh.org][README.zh.org]]
+
+~overleaf-project~ provides project-level Overleaf integration for Emacs:
+
+- clone a full Overleaf project to a local Git repository
+- keep editing locally with normal Git commits
+- push committed local snapshots to Overleaf and pull remote updates back
+- resolve local/remote divergence with normal =git merge= on a dedicated branch
+
+This package no longer provides the old single-buffer live editing workflow.
+Load ~overleaf-project~ directly in both new and existing configs.
+
+* Installation
+
+Add the package to your load path and require ~overleaf-project~, or use
+=use-package=:
+
+#+begin_src elisp
+  (use-package overleaf-project
+    :custom
+    (overleaf-url "https://www.overleaf.com"))
+#+end_src
+
+The package targets Emacs 29.4+ and depends on the Elisp packages
+=plz=, =websocket= and =webdriver=.
+
+The package feature is named ~overleaf-project~.  Interactive commands
+and customization variables keep the ~overleaf-~ prefix.
+
+If you use a self-hosted Overleaf instance, set the server URL:
+
+#+begin_src elisp
+  (setopt overleaf-url "https://latex.example.edu")
+#+end_src
+
+** External tools
+
+Project push/pull expects these executables to be available:
+
+- =git=
+- =curl=
+- =unzip=
+
+Optional authentication through the browser also needs =geckodriver= (https://github.com/mozilla/geckodriver).
+
+* Authentication
+
+You need valid Overleaf session cookies before cloning, pushing, or pulling.
+
+** ~overleaf-authenticate~
+
+By default, ~overleaf-authenticate~ stores cookies in Emacs auth-source.
+It uses the first plain file entry from ~auth-sources~, falling back to
+=~/.authinfo=.  The package keeps one Overleaf-managed record per host,
+using =login overleaf-project= and =port overleaf-cookie=.  Re-authentication
+replaces that managed record instead of appending stale copies.
+
+If you prefer a plain file instead, set:
+
+#+begin_src elisp
+  (setopt overleaf-cookie-storage "~/.overleaf-cookies")
+#+end_src
+
+If you want cookies to stay only in memory for the current Emacs
+session, set:
+
+#+begin_src elisp
+  (setopt overleaf-cookie-storage nil)
+#+end_src
+
+For fully custom setups, you can still set ~overleaf-cookies~ and
+~overleaf-save-cookies~ directly, or use the file helpers
+~overleaf-read-cookies-from-file~ and ~overleaf-save-cookies-to-file~.
+
+Then run:
+
+#+begin_example
+M-x overleaf-authenticate
+#+end_example
+
+If ~overleaf-project-clone~, ~overleaf-project-config~,
+~overleaf-project-push~, ~overleaf-project-push-force~, or
+~overleaf-project-pull~ starts without valid cookies, the command asks
+in the minibuffer whether it should run ~overleaf-authenticate~
+immediately.  For cookies saved by ~overleaf-authenticate~, expiry is
+checked from the locally saved session-cookie expiry before any network
+request; short-lived analytics cookies are ignored for that check.
+
+* Workflow
+
+** Clone a project
+
+Run:
+
+#+begin_example
+M-x overleaf-project-clone
+#+end_example
+
+This command:
+
+- uses the configured ~overleaf-url~ and prompts for the project
+- downloads the full project zip
+- creates a local Git repository
+- commits the imported snapshot
+- stores Overleaf metadata in the repo's local Git config
+
+** Bind an existing Git repo
+
+If you already have a local Git repository with the project files, run:
+
+#+begin_example
+M-x overleaf-project-config
+#+end_example
+
+This command:
+
+- prompts for the remote Overleaf project
+- stores Overleaf metadata in the repo's local Git config
+- initializes the hidden base snapshot used by later push/pull operations
+- does not automatically pull from or push to Overleaf
+
+** Edit locally
+
+After cloning, work in the repo normally:
+
+- edit files locally
+- optionally stage only the changes you want to include
+- run ~M-x overleaf-project-push~ to upload local commits
+- run ~M-x overleaf-project-pull~ to bring remote Overleaf changes back
+
+~overleaf-project-push~ prepares the local branch before talking to
+Overleaf:
+
+- if there are staged changes, it commits them automatically
+- if there are unstaged or untracked files, it asks whether to stage all changes first
+- it then fetches the latest remote Overleaf snapshot and either uploads ~HEAD~ or opens a merge branch when both sides changed
+
+~overleaf-project-pull~ requires a clean working tree and merges the
+latest Overleaf snapshot into the current branch.
+
+Both commands still have to run from a normal branch rather than a
+detached ~HEAD~.
+
+** Push to Overleaf
+
+Run:
+
+#+begin_example
+M-x overleaf-project-push
+#+end_example
+
+The command compares three states:
+
+- the last successfully synced Git commit
+- the current local ~HEAD~
+- the latest project snapshot downloaded from Overleaf
+
+Then it behaves as follows:
+
+- if only local changed, it uploads ~HEAD~ to Overleaf
+- if remote already matches ~HEAD~, it only updates the base ref
+- if only remote changed, it stops and asks you to run ~overleaf-project-pull~
+- if both changed differently, it creates a new merge branch, runs =git merge=, and pushes the merged result once the branch is resolved
+
+** Force push to Overleaf
+
+Run:
+
+#+begin_example
+M-x overleaf-project-push-force
+#+end_example
+
+This command uses the same local auto-commit preparation as
+~overleaf-project-push~, but always replaces the remote Overleaf project
+contents with the local ~HEAD~ snapshot.  Use it only when you
+intentionally want local files to win over the remote state.
+
+** Pull from Overleaf
+
+Run:
+
+#+begin_example
+M-x overleaf-project-pull
+#+end_example
+
+The command compares the same three states and then behaves as follows:
+
+- if only remote changed, it fast-forwards your current branch locally
+- if local already matches the remote snapshot, it only updates the base ref
+- if there are no remote changes, it reports that nothing needs to be pulled
+- if both changed differently, it creates a new merge branch and runs =git merge=
+
+The clone, config, push, and pull commands store project metadata in the
+repository's local Git config, so later pushes and pulls can run from
+anywhere inside that repo.
+
+* Conflict handling
+
+When both local and remote changed, ~overleaf-project-push~ and
+~overleaf-project-pull~ create a
+branch named like:
+
+#+begin_example
+overleaf-sync/20260412-153000
+#+end_example
+
+It then merges the downloaded remote snapshot into that branch.
+
+If the merge conflicts:
+
+- the original branch is left untouched
+- the merge branch stays checked out
+- you resolve conflicts with Magit or plain Git
+- after creating the merge commit, rerun the same command that created the branch
+
+This keeps conflict resolution entirely inside Git instead of ediff.
+
+* Push on Commit
+
+If you commit from Emacs via Magit / =git-commit=, you can trigger push
+automatically after each commit:
+
+#+begin_src elisp
+  (with-eval-after-load 'git-commit
+    (add-hook 'git-commit-post-finish-hook
+              #'overleaf-project-push-after-commit))
+#+end_src
+
+The hook only pushes repositories that already contain Overleaf project
+metadata.
+
+* Commands
+
+The main interactive commands are:
+
+- ~overleaf-authenticate~
+- ~overleaf-project-clone~
+- ~overleaf-project-config~
+- ~overleaf-project-push~
+- ~overleaf-project-push-force~
+- ~overleaf-project-pull~
+- ~overleaf-project-push-after-commit~
+- ~overleaf-browse-project~
+
+You can also bind the provided command map:
+
+#+begin_src elisp
+  (global-set-key (kbd "C-c o") overleaf-command-map)
+#+end_src
+
+The default bindings inside that map are:
+
+- =a= -> ~overleaf-authenticate~
+- =b= -> ~overleaf-browse-project~
+- =c= -> ~overleaf-project-clone~
+- =l= -> ~overleaf-project-pull~
+- =p= -> ~overleaf-project-push~
+- =s= -> ~overleaf-project-push~ (compatibility shortcut)
+
+* Customization
+
+Useful options include:
+
+- ~overleaf-url~ for the Overleaf server URL
+- ~overleaf-cache-cookies~ to force cookie reloads instead of caching
+- ~overleaf-debug~ for verbose logging
+- ~overleaf-project-sync-auto-commit-message~ for the automatic local checkpoint commit before pushing
+- ~overleaf-project-sync-branch-prefix~ to rename conflict branches
+- ~overleaf-project-socket-timeout~ if project tree websocket fetches need longer
+- ~overleaf-git-executable~, ~overleaf-curl-executable~ and
+  ~overleaf-unzip-executable~ if the tools are not on your =PATH=
+
+* Notes
+
+- Push currently recreates changed remote files instead of preserving old
+  Overleaf document ids.  That is acceptable for the new project-level
+  workflow, but it is different from the old live buffer integration.
+- ~overleaf-project-push-force~ overwrites remote Overleaf files with the
+  local ~HEAD~ snapshot.
+- Empty directories are not tracked by Git and therefore are not
+  preserved by push/pull.
+- Verbose logging can be enabled by setting ~overleaf-debug~ to ~t~.
+- The old ~overleaf-project-sync~ and ~overleaf-project-sync-after-commit~
+  commands remain as obsolete aliases for ~overleaf-project-push~ and
+  ~overleaf-project-push-after-commit~.

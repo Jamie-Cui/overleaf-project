@@ -1,0 +1,279 @@
+#+title: overleaf-project（中文说明）
+
+English README: [[file:README.org][README.org]]
+
+~overleaf-project~ 为 Emacs 提供基于项目级别的 Overleaf 集成：
+
+- 将整个 Overleaf 项目克隆为本地 Git 仓库
+- 在本地继续使用普通 Git 提交进行编辑
+- 将本地已提交的快照推送到 Overleaf，并拉取 Overleaf 上的远端更新
+- 当本地与远端同时发生变化时，在专用分支上用普通 =git merge= 处理冲突
+
+本包不再提供旧的单 buffer 实时编辑工作流。
+无论是新配置还是旧配置，都应直接加载 ~overleaf-project~。
+
+* 安装
+
+将本包加入 load path 并加载 ~overleaf-project~，或者使用
+=use-package=：
+
+#+begin_src elisp
+  (use-package overleaf-project
+    :custom
+    (overleaf-url "https://www.overleaf.com"))
+#+end_src
+
+本包要求 Emacs 29.4+，并依赖以下 Elisp 包：
+=plz=、=websocket= 和 =webdriver=。
+
+包的 feature 名称为 ~overleaf-project~。交互命令和自定义变量继续使用
+~overleaf-~ 前缀。
+
+如果你使用的是自建 Overleaf 实例，请设置服务器地址：
+
+#+begin_src elisp
+  (setopt overleaf-url "https://latex.example.edu")
+#+end_src
+
+** 外部工具
+
+项目推送和拉取要求系统中可用以下可执行文件：
+
+- =git=
+- =curl=
+- =unzip=
+
+如果要通过浏览器辅助认证，还需要安装 =geckodriver= (https://github.com/mozilla/geckodriver)。
+
+* 认证
+
+在 clone、push 或 pull 之前，你需要有效的 Overleaf 会话 cookies。
+
+** ~overleaf-authenticate~
+
+默认情况下，~overleaf-authenticate~ 会把 cookies 存到 Emacs 的
+auth-source 中。它会优先使用 ~auth-sources~ 里的第一个明文文件条目；
+如果没有，就回退到 =~/.authinfo=。本包会按 Overleaf host 维护一条受管
+理记录，并使用 =login overleaf-project= 和 =port overleaf-cookie=
+进行定位。重新认证时，会替换这条记录，而不是不断追加过期副本。
+
+如果你更希望使用普通文件，可以设置：
+
+#+begin_src elisp
+  (setopt overleaf-cookie-storage "~/.overleaf-cookies")
+#+end_src
+
+如果你希望 cookies 只保存在当前 Emacs 会话内存中，可以设置：
+
+#+begin_src elisp
+  (setopt overleaf-cookie-storage nil)
+#+end_src
+
+如果你有完全自定义的需求，也仍然可以直接设置
+~overleaf-cookies~ 和 ~overleaf-save-cookies~，或者继续使用
+~overleaf-read-cookies-from-file~ 与 ~overleaf-save-cookies-to-file~
+这对文件 helper。
+
+然后执行：
+
+#+begin_example
+M-x overleaf-authenticate
+#+end_example
+
+如果 ~overleaf-project-clone~、~overleaf-project-config~、
+~overleaf-project-push~、~overleaf-project-push-force~ 或
+~overleaf-project-pull~ 启动时没有有效 cookies，命令会先在
+minibuffer 中询问你是否立即运行 ~overleaf-authenticate~。对于
+~overleaf-authenticate~ 保存下来的 cookies，过期判断会先基于本地
+保存的 session cookie expiry 完成，不需要先访问远端；像分析统计这类
+很短命的 cookies 不会参与这个过期判断。
+
+* 工作流
+
+** 克隆项目
+
+执行：
+
+#+begin_example
+M-x overleaf-project-clone
+#+end_example
+
+这个命令会：
+
+- 使用配置好的 ~overleaf-url~，然后提示你选择项目
+- 下载完整项目 zip 包
+- 创建本地 Git 仓库
+- 提交导入后的初始快照
+- 将 Overleaf 元数据写入该仓库的本地 Git 配置
+
+** 绑定已有的 Git 仓库
+
+如果你已经有一个包含项目文件的本地 Git 仓库，执行：
+
+#+begin_example
+M-x overleaf-project-config
+#+end_example
+
+这个命令会：
+
+- 让你选择要绑定的远端 Overleaf 项目
+- 将 Overleaf 元数据写入该仓库的本地 Git 配置
+- 初始化后续 push/pull 会使用的隐藏 base snapshot
+- 不会自动从 Overleaf 拉取，也不会自动推送到 Overleaf
+
+** 本地编辑
+
+克隆之后，可以像普通 Git 仓库一样工作：
+
+- 在本地编辑文件
+- 按需只暂存你想包含的改动
+- 运行 ~M-x overleaf-project-push~ 上传本地提交
+- 运行 ~M-x overleaf-project-pull~ 拉取 Overleaf 上的远端改动
+
+~overleaf-project-push~ 在真正访问 Overleaf 之前会先整理本地分支：
+
+- 如果存在已暂存改动，它会自动提交
+- 如果存在未暂存或未跟踪文件，它会询问你是否先暂存全部改动
+- 然后它会拉取最新的 Overleaf 快照，并在双方都发生变化时选择直接上传
+  ~HEAD~ 或创建合并分支
+
+~overleaf-project-pull~ 要求工作树干净，并把最新的 Overleaf 快照合并到当前
+分支。
+
+这两个命令都必须在普通分支上运行，不能在 detached ~HEAD~ 状态下执行。
+
+** 推送到 Overleaf
+
+执行：
+
+#+begin_example
+M-x overleaf-project-push
+#+end_example
+
+该命令会比较以下三种状态：
+
+- 上一次成功同步对应的 Git commit
+- 当前本地 ~HEAD~
+- 从 Overleaf 下载的最新项目快照
+
+然后按以下规则处理：
+
+- 如果只有本地发生变化，就把 ~HEAD~ 上传到 Overleaf
+- 如果远端内容已经与 ~HEAD~ 一致，只更新基线 ref
+- 如果只有远端发生变化，会停止并提示你先运行 ~overleaf-project-pull~
+- 如果两边都发生了不同的变化，会创建新的合并分支，执行 =git merge=，并在冲突解决后推送合并结果
+
+** 强制推送到 Overleaf
+
+执行：
+
+#+begin_example
+M-x overleaf-project-push-force
+#+end_example
+
+这个命令会沿用 ~overleaf-project-push~ 的本地自动提交准备逻辑，
+但总是用本地 ~HEAD~ 快照覆盖远端 Overleaf 项目内容。只有在你明确
+希望本地文件覆盖远端状态时才应使用它。
+
+** 从 Overleaf 拉取
+
+执行：
+
+#+begin_example
+M-x overleaf-project-pull
+#+end_example
+
+该命令也会比较同样的三种状态，然后按以下规则处理：
+
+- 如果只有远端发生变化，就在本地对当前分支执行 fast-forward
+- 如果本地已经和远端快照一致，只更新基线 ref
+- 如果远端没有新变化，就提示当前无需拉取
+- 如果两边都发生了不同的变化，会创建新的合并分支并执行 =git merge=
+
+clone、config、push 和 pull 命令都会把项目元数据存放在仓库的本地
+Git 配置中，因此之后无论你位于该仓库中的哪个子目录，都可以继续推送和拉取。
+
+* 冲突处理
+
+当本地与远端同时发生变化时，~overleaf-project-push~ 和
+~overleaf-project-pull~ 会创建一个类似下面这样的分支：
+
+#+begin_example
+overleaf-sync/20260412-153000
+#+end_example
+
+然后把下载下来的远端快照合并到这个分支。
+
+如果合并产生冲突：
+
+- 原始分支不会被改动
+- 当前会继续停留在合并分支上
+- 你可以使用 Magit 或普通 Git 解决冲突
+- 创建好 merge commit 后，重新运行创建该分支的那个命令
+
+这样冲突处理完全发生在 Git 中，而不是通过 ediff。
+
+* 提交后自动推送
+
+如果你通过 Emacs 中的 Magit / =git-commit= 提交，可以在每次提交后自动触发
+push：
+
+#+begin_src elisp
+  (with-eval-after-load 'git-commit
+    (add-hook 'git-commit-post-finish-hook
+              #'overleaf-project-push-after-commit))
+#+end_src
+
+这个 hook 只会对已经包含 Overleaf 项目元数据的仓库生效。
+
+* 命令
+
+主要交互命令包括：
+
+- ~overleaf-authenticate~
+- ~overleaf-project-clone~
+- ~overleaf-project-config~
+- ~overleaf-project-push~
+- ~overleaf-project-push-force~
+- ~overleaf-project-pull~
+- ~overleaf-project-push-after-commit~
+- ~overleaf-browse-project~
+
+你也可以绑定内置的命令前缀图：
+
+#+begin_src elisp
+  (global-set-key (kbd "C-c o") overleaf-command-map)
+#+end_src
+
+该前缀图中的默认按键为：
+
+- =a= -> ~overleaf-authenticate~
+- =b= -> ~overleaf-browse-project~
+- =c= -> ~overleaf-project-clone~
+- =l= -> ~overleaf-project-pull~
+- =p= -> ~overleaf-project-push~
+- =s= -> ~overleaf-project-push~（兼容快捷键）
+
+* 自定义
+
+常用选项包括：
+
+- ~overleaf-url~：Overleaf 服务器地址
+- ~overleaf-cache-cookies~：是否缓存 cookies，而不是每次重新读取
+- ~overleaf-debug~：开启详细日志
+- ~overleaf-project-sync-auto-commit-message~：push 前自动本地提交时使用的消息
+- ~overleaf-project-sync-branch-prefix~：冲突分支名前缀
+- ~overleaf-project-socket-timeout~：websocket 获取项目树时的超时时间
+- ~overleaf-git-executable~、~overleaf-curl-executable~ 和
+  ~overleaf-unzip-executable~：当这些工具不在 =PATH= 中时可手动指定
+
+* 说明
+
+- 当前 push 会重建发生变化的远端文件，而不会保留原来的 Overleaf 文档 id。
+  对于新的项目级工作流，这是可以接受的，但与旧的实时 buffer 集成方式不同。
+- ~overleaf-project-push-force~ 会用本地 ~HEAD~ 快照覆盖远端 Overleaf 文件。
+- 空目录不会被 Git 跟踪，因此在 push/pull 时也不会被保留。
+- 将 ~overleaf-debug~ 设为 ~t~ 可以开启详细日志。
+- 旧的 ~overleaf-project-sync~ 和 ~overleaf-project-sync-after-commit~
+  命令仍作为过时别名保留，分别指向 ~overleaf-project-push~ 和
+  ~overleaf-project-push-after-commit~。

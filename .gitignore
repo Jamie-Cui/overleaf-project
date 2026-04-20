@@ -15,3 +15,8 @@ node_modules
 __pycache__
 auto
 activate
+data
+.projectile*
+
+/overleaf-server
+/.codex
