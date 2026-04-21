@@ -49,9 +49,12 @@
            (face (cdr state)))
       (magit-insert-section (overleaf)
         (magit-insert-heading
-          (format "Overleaf: %s (%s)"
+          (format "Overleaf: %s (%s%s)"
                   (propertize name 'font-lock-face 'magit-section-heading)
-                  (propertize label 'font-lock-face face)))
+                  (propertize label 'font-lock-face face)
+                  (if overleaf-project-magit--refreshing
+                      (propertize ", refreshing..." 'font-lock-face 'magit-dimmed)
+                    "")))
         ;; Local changes diff (base..HEAD), collapsed by default
         (unless (equal (overleaf-project--tree-id repo base-ref)
                        (overleaf-project--tree-id repo "HEAD"))
@@ -71,10 +74,21 @@
 
 ;;;; Remote refresh
 
+(defvar-local overleaf-project-magit--refreshing nil
+  "Non-nil while an async remote refresh is in progress.")
+
+(defun overleaf-project-magit--curl-args (url zipfile headers)
+  "Build curl argument list to download URL into ZIPFILE with HEADERS."
+  (append
+   '("--fail" "--silent" "--show-error" "--location")
+   (apply #'append
+          (mapcar (lambda (h) (list "-H" h)) headers))
+   (list "--output" zipfile url)))
+
 (defun overleaf-project-magit-refresh-remote ()
-  "Download the remote Overleaf snapshot and show remote changes.
-Creates a temporary commit from the remote zip and stores its SHA
-so the section can display a remote-changes diff."
+  "Asynchronously download the remote Overleaf snapshot and show remote changes.
+Starts a background curl process; on completion, extracts the zip,
+creates a temporary commit, and refreshes the magit buffer."
   (interactive)
   (let* ((repo (or (magit-toplevel)
                    (user-error "Not inside a Git repository")))
@@ -83,32 +97,71 @@ so the section can display a remote-changes diff."
          (base-ref (overleaf-project--base-ref repo))
          (base-rev (or (overleaf-project--rev-parse-noerror repo base-ref)
                        (user-error "Base ref %s does not exist" base-ref)))
-         (project-id (overleaf-project--project-id repo)))
-    (condition-case err
-        (let ((snapshot nil))
-          (unwind-protect
-              (progn
-                (setq snapshot
-                      (overleaf-project--download-snapshot project-id))
-                (overleaf--message "Creating temporary commit...")
-                (let ((commit
-                       (overleaf-project--commit-directory
-                        repo
-                        (overleaf-project--snapshot-root snapshot)
-                        base-rev
-                        "overleaf remote snapshot")))
-                  (setq overleaf-project-magit--remote-commit commit)
-                  (overleaf--message "Remote snapshot ready.")
-                  (magit-refresh)))
-            (when snapshot
-              (ignore-errors
-                (delete-directory
-                 (overleaf-project--snapshot-temp-dir snapshot) t)))))
-      (error
-       (setq overleaf-project-magit--remote-commit nil)
-       (magit-refresh)
-       (message "Overleaf remote refresh failed: %s"
-                (error-message-string err))))))
+         (project-id (overleaf-project--project-id repo))
+         (magit-buf (current-buffer))
+         (zipfile (make-temp-file "overleaf-project." nil ".zip"))
+         (temp-dir (make-temp-file "overleaf-project." t))
+         (headers
+          (overleaf-project--format-curl-headers
+           (overleaf-project--base-headers
+            (overleaf--project-page-url project-id))))
+         (url (format "%s/project/%s/download/zip"
+                      (overleaf--url) project-id))
+         (curl (overleaf-project--ensure-executable
+                overleaf-curl-executable)))
+    (when overleaf-project-magit--refreshing
+      (user-error "Remote refresh already in progress"))
+    (setq overleaf-project-magit--refreshing t)
+    (overleaf--message "Downloading remote snapshot...")
+    (make-process
+     :name "overleaf-remote-refresh"
+     :command (cons curl
+                    (overleaf-project-magit--curl-args url zipfile headers))
+     :noquery t
+     :sentinel
+     (lambda (proc event)
+       (unwind-protect
+           (cond
+            ((not (eq (process-status proc) 'exit))
+             ;; still running or signaled — ignore
+             nil)
+            ((not (zerop (process-exit-status proc)))
+             (ignore-errors (delete-file zipfile))
+             (ignore-errors (delete-directory temp-dir t))
+             (when (buffer-live-p magit-buf)
+               (with-current-buffer magit-buf
+                 (setq overleaf-project-magit--remote-commit nil)
+                 (magit-refresh)))
+             (message "Overleaf remote refresh failed: curl exited %d"
+                      (process-exit-status proc)))
+            (t
+             (condition-case err
+                 (progn
+                   (overleaf-project--run
+                    overleaf-unzip-executable
+                    (list "-q" "-o" zipfile "-d" temp-dir))
+                   (let* ((root (overleaf-project--normalize-extracted-root
+                                 temp-dir))
+                          (commit (overleaf-project--commit-directory
+                                   repo root base-rev
+                                   "overleaf remote snapshot")))
+                     (when (buffer-live-p magit-buf)
+                       (with-current-buffer magit-buf
+                         (setq overleaf-project-magit--remote-commit commit)
+                         (overleaf--message "Remote snapshot ready.")
+                         (magit-refresh)))))
+               (error
+                (when (buffer-live-p magit-buf)
+                  (with-current-buffer magit-buf
+                    (setq overleaf-project-magit--remote-commit nil)
+                    (magit-refresh)))
+                (message "Overleaf remote refresh failed: %s"
+                         (error-message-string err))))
+             (ignore-errors (delete-file zipfile))
+             (ignore-errors (delete-directory temp-dir t))))
+         (when (buffer-live-p magit-buf)
+           (with-current-buffer magit-buf
+             (setq overleaf-project-magit--refreshing nil))))))))
 
 ;;;; Setup
 
