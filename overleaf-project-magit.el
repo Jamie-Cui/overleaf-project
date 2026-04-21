@@ -69,15 +69,6 @@
                 "diff" base-rev overleaf-project-magit--remote-commit
                 "--no-prefix"))))))))
 
-;;;; Section keymap
-
-(defvar-keymap magit-overleaf-section-map
-  :doc "Keymap for the `overleaf' section in magit-status."
-  "p" #'overleaf-project-push
-  "l" #'overleaf-project-pull
-  "r" #'overleaf-project-magit-refresh-remote
-  "b" #'overleaf-project-browse-remote)
-
 ;;;; Remote refresh
 
 (defun overleaf-project-magit-refresh-remote ()
