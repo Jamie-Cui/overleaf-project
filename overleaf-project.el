@@ -79,9 +79,6 @@ The cookies are usually obtained and refreshed via
 `overleaf-project-authenticate'."
   :type '(choice sexp string function))
 
-;;;###autoload
-(defvaralias 'overleaf-default-url 'overleaf-url)
-(make-obsolete-variable 'overleaf-default-url 'overleaf-url "2.0.1")
 
 (defcustom overleaf-url "https://www.overleaf.com"
   "The URL of the Overleaf server."
@@ -318,7 +315,7 @@ this variable directly only when you want custom persistence logic.")
     ('authinfo
      (overleaf--authinfo-read-secret nil nil nil nil))
     ((pred stringp)
-     (funcall (overleaf-read-cookies-from-file overleaf-cookie-storage)))
+     (funcall (overleaf-project-read-cookies-from-file overleaf-cookie-storage)))
     (_ nil)))
 
 (defun overleaf--save-configured-cookies (cookies)
@@ -327,11 +324,11 @@ this variable directly only when you want custom persistence logic.")
     ('authinfo
      (overleaf--authinfo-write-secret nil nil nil nil cookies))
     ((pred stringp)
-     (funcall (overleaf-save-cookies-to-file overleaf-cookie-storage) cookies))
+     (funcall (overleaf-project-save-cookies-to-file overleaf-cookie-storage) cookies))
     (_ nil)))
 
 ;;;###autoload
-(defun overleaf-read-cookies-from-file (file)
+(defun overleaf-project-read-cookies-from-file (file)
   "Return a cookie loader function reading cookies from FILE.
 To be used with `overleaf-cookies'."
   (lambda ()
@@ -378,7 +375,7 @@ To be used with `overleaf-cookies'."
     (error "Unsupported value for `overleaf-cookies': %S" cookies))))
 
 ;;;###autoload
-(defun overleaf-save-cookies-to-file (file)
+(defun overleaf-project-save-cookies-to-file (file)
   "Return a cookie saver function writing cookies to FILE.
 To be used with `overleaf-save-cookies'."
   (lambda (cookies)
@@ -1944,7 +1941,7 @@ If URL is nil, use `overleaf-url'."
         target)))))
 
 ;;;###autoload
-(defun overleaf-project-config (&optional directory url)
+(defun overleaf-project-init (&optional directory url)
   "Bind the Git repo in DIRECTORY to a remote Overleaf project on URL.
 The command stores project metadata and initializes the hidden base
 snapshot used by later `overleaf-project-push' and
@@ -2256,12 +2253,7 @@ If URL is nil, use `overleaf-url'."
 ;;;; Command map
 
 ;;;###autoload
-(make-obsolete-variable 'overleaf-keymap-prefix
-                        "bind `overleaf-command-map' directly (see README)."
-                        "2.0.0")
-
-;;;###autoload
-(defvar-keymap overleaf-command-map
+(defvar-keymap overleaf-project-command-map
   "a" #'overleaf-project-authenticate
   "b" #'overleaf-project-browse-remote
   "c" #'overleaf-project-clone

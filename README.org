@@ -75,7 +75,7 @@ session, set:
 
 For fully custom setups, you can still set ~overleaf-cookies~ and
 ~overleaf-save-cookies~ directly, or use the file helpers
-~overleaf-read-cookies-from-file~ and ~overleaf-save-cookies-to-file~.
+~overleaf-project-read-cookies-from-file~ and ~overleaf-project-save-cookies-to-file~.
 
 Then run:
 
@@ -83,7 +83,7 @@ Then run:
 M-x overleaf-project-authenticate
 #+end_example
 
-If ~overleaf-project-clone~, ~overleaf-project-config~,
+If ~overleaf-project-clone~, ~overleaf-project-init~,
 ~overleaf-project-push~, ~overleaf-project-push-force~, or
 ~overleaf-project-pull~ starts without valid cookies, the command asks
 in the minibuffer whether it should run ~overleaf-project-authenticate~
@@ -114,7 +114,7 @@ This command:
 If you already have a local Git repository with the project files, run:
 
 #+begin_example
-M-x overleaf-project-config
+M-x overleaf-project-init
 #+end_example
 
 This command:
@@ -240,7 +240,7 @@ The main interactive commands are:
 
 - ~overleaf-project-authenticate~
 - ~overleaf-project-clone~
-- ~overleaf-project-config~
+- ~overleaf-project-init~
 - ~overleaf-project-push~
 - ~overleaf-project-push-force~
 - ~overleaf-project-pull~
@@ -249,7 +249,7 @@ The main interactive commands are:
 You can also bind the provided command map:
 
 #+begin_src elisp
-  (global-set-key (kbd "C-c o") overleaf-command-map)
+  (global-set-key (kbd "C-c o") overleaf-project-command-map)
 #+end_src
 
 The default bindings inside that map are:
