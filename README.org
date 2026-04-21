@@ -52,9 +52,9 @@ Optional authentication through the browser also needs =geckodriver= (https://gi
 
 You need valid Overleaf session cookies before cloning, pushing, or pulling.
 
-** ~overleaf-authenticate~
+** ~overleaf-project-authenticate~
 
-By default, ~overleaf-authenticate~ stores cookies in Emacs auth-source.
+By default, ~overleaf-project-authenticate~ stores cookies in Emacs auth-source.
 It uses the first plain file entry from ~auth-sources~, falling back to
 =~/.authinfo=.  The package keeps one Overleaf-managed record per host,
 using =login overleaf-project= and =port overleaf-cookie=.  Re-authentication
@@ -80,14 +80,14 @@ For fully custom setups, you can still set ~overleaf-cookies~ and
 Then run:
 
 #+begin_example
-M-x overleaf-authenticate
+M-x overleaf-project-authenticate
 #+end_example
 
 If ~overleaf-project-clone~, ~overleaf-project-config~,
 ~overleaf-project-push~, ~overleaf-project-push-force~, or
 ~overleaf-project-pull~ starts without valid cookies, the command asks
-in the minibuffer whether it should run ~overleaf-authenticate~
-immediately.  For cookies saved by ~overleaf-authenticate~, expiry is
+in the minibuffer whether it should run ~overleaf-project-authenticate~
+immediately.  For cookies saved by ~overleaf-project-authenticate~, expiry is
 checked from the locally saved session-cookie expiry before any network
 request; short-lived analytics cookies are ignored for that check.
 
@@ -228,7 +228,7 @@ automatically after each commit:
 #+begin_src elisp
   (with-eval-after-load 'git-commit
     (add-hook 'git-commit-post-finish-hook
-              #'overleaf-project-push-after-commit))
+              (lambda () (overleaf-project-push nil t))))
 #+end_src
 
 The hook only pushes repositories that already contain Overleaf project
@@ -238,14 +238,13 @@ metadata.
 
 The main interactive commands are:
 
-- ~overleaf-authenticate~
+- ~overleaf-project-authenticate~
 - ~overleaf-project-clone~
 - ~overleaf-project-config~
 - ~overleaf-project-push~
 - ~overleaf-project-push-force~
 - ~overleaf-project-pull~
-- ~overleaf-project-push-after-commit~
-- ~overleaf-browse-project~
+- ~overleaf-project-browse-remote~
 
 You can also bind the provided command map:
 
@@ -255,8 +254,8 @@ You can also bind the provided command map:
 
 The default bindings inside that map are:
 
-- =a= -> ~overleaf-authenticate~
-- =b= -> ~overleaf-browse-project~
+- =a= -> ~overleaf-project-authenticate~
+- =b= -> ~overleaf-project-browse-remote~
 - =c= -> ~overleaf-project-clone~
 - =l= -> ~overleaf-project-pull~
 - =p= -> ~overleaf-project-push~
@@ -285,6 +284,3 @@ Useful options include:
 - Empty directories are not tracked by Git and therefore are not
   preserved by push/pull.
 - Verbose logging can be enabled by setting ~overleaf-debug~ to ~t~.
-- The old ~overleaf-project-sync~ and ~overleaf-project-sync-after-commit~
-  commands remain as obsolete aliases for ~overleaf-project-push~ and
-  ~overleaf-project-push-after-commit~.

@@ -76,7 +76,7 @@ variable directly only when you want to supply cookies manually or use a
 custom loader.
 
 The cookies are usually obtained and refreshed via
-`overleaf-authenticate'."
+`overleaf-project-authenticate'."
   :type '(choice sexp string function))
 
 ;;;###autoload
@@ -128,7 +128,7 @@ The cookies are usually obtained and refreshed via
   "\\`\\(?:overleaf_session[[:alnum:]_]*\\|sharelatex_session[[:alnum:]_]*\\|sharelatex\\.sid\\|connect\\.sid\\|sessionid\\|session\\)\\'"
   "Regexp matching cookie names that represent the authenticated session.
 
-This is used only for local expiry checks after `overleaf-authenticate'.
+This is used only for local expiry checks after `overleaf-project-authenticate'.
 Short-lived analytics or load-balancer cookies are intentionally ignored,
 because their expiry is often much earlier than the actual login session."
   :type 'regexp)
@@ -408,11 +408,11 @@ To be used with `overleaf-save-cookies'."
        (plist-get state :value))
       ('expired
        (user-error
-        "Cookies for %s are expired. Refresh them with `overleaf-authenticate' or manually"
+        "Cookies for %s are expired. Refresh them with `overleaf-project-authenticate' or manually"
         (overleaf--url-host)))
       (_
        (user-error
-        "Cookies for %s are not set. Configure them with `overleaf-authenticate' or manually"
+        "Cookies for %s are not set. Configure them with `overleaf-project-authenticate' or manually"
         (overleaf--url-host))))))
 
 (defun overleaf--cookie-state ()
@@ -444,7 +444,7 @@ does not contact the Overleaf server."
 (defun overleaf--ensure-authenticated (&optional action)
   "Ensure the current `overleaf-url' has usable cookies before ACTION.
 If cookies are missing or expired, ask in the minibuffer whether to run
-`overleaf-authenticate' immediately."
+`overleaf-project-authenticate' immediately."
   (let* ((host (overleaf--url-host))
          (state (overleaf--cookie-state))
          (status (plist-get state :status))
@@ -463,13 +463,13 @@ If cookies are missing or expired, ask in the minibuffer whether to run
               (not
                (let ((use-dialog-box nil))
                  (y-or-n-p
-                  (format "%s Re-run `overleaf-authenticate` now? "
+                  (format "%s Re-run `overleaf-project-authenticate` now? "
                           reason)))))
           (user-error
-           "%s Run `overleaf-authenticate` before %s"
+           "%s Run `overleaf-project-authenticate` before %s"
            reason
            (or action "continuing"))
-        (overleaf-authenticate overleaf-url)
+        (overleaf-project-authenticate overleaf-url)
         (overleaf--get-cookies)
         t))))
 
@@ -1984,15 +1984,37 @@ snapshot used by later `overleaf-project-push' and
         (plist-get project :name))))))
 
 ;;;###autoload
-(defun overleaf-project-push (&optional directory)
+(defun overleaf-project-push (&optional directory noerror)
   "Push the current Git repo to its configured Overleaf project.
 Staged changes are committed automatically before the remote snapshot is
 fetched.  When unstaged changes exist, prompt whether to stage them
-first."
+first.
+
+When NOERROR is non-nil, silently return nil if DIRECTORY is not a
+managed Overleaf repo, and demote push errors to warnings.  This is
+useful for hooks such as `git-commit-post-finish-hook'."
   (interactive)
-  (let* ((repo (overleaf-project--require-managed-repo directory))
-         (pending nil)
-         (project-id nil))
+  (let* ((repo (or (and directory (overleaf-project-root directory))
+                   (overleaf-project-root default-directory))))
+    (cond
+     ((not (and repo (overleaf-project--managed-repo-p repo)))
+      (if noerror
+          nil
+        (user-error "Repository %s is not configured as an Overleaf project"
+                     (or repo default-directory))))
+     (noerror
+      (condition-case err
+          (overleaf-project--push-1 repo)
+        (error
+         (overleaf--warn "Automatic Overleaf push failed for %s: %s"
+                         repo (error-message-string err)))))
+     (t
+      (overleaf-project--push-1 repo)))))
+
+(defun overleaf-project--push-1 (repo)
+  "Internal: perform the actual push for managed REPO."
+  (let ((pending nil)
+        (project-id nil))
     (overleaf-project--set-repo-url repo)
     (setq pending (overleaf-project--pending-state repo))
     (overleaf-project--ensure-pending-action repo pending 'push)
@@ -2067,35 +2089,10 @@ The working tree must be clean before pulling."
            (overleaf-project--finalize-pending-pull repo pending remote-root)
          (overleaf-project--fresh-pull repo remote-root))))))
 
-;;;###autoload
-(defun overleaf-project-push-after-commit ()
-  "Push the current repo after a Git commit when applicable.
-This is intended for `git-commit-post-finish-hook'."
-  (interactive)
-  (when-let* ((repo
-               (or (bound-and-true-p git-commit-top-dir)
-                    (overleaf-project-root default-directory))))
-    (when (overleaf-project--managed-repo-p repo)
-      (condition-case err
-          (overleaf-project-push repo)
-        (error
-         (overleaf--warn
-          "Automatic Overleaf push failed for %s: %s"
-          repo
-          (error-message-string err)))))))
+
 
 ;;;###autoload
-(define-obsolete-function-alias 'overleaf-project-sync
-  'overleaf-project-push
-  "2.0.1")
-
-;;;###autoload
-(define-obsolete-function-alias 'overleaf-project-sync-after-commit
-  'overleaf-project-push-after-commit
-  "2.0.1")
-
-;;;###autoload
-(defun overleaf-browse-project (&optional directory)
+(defun overleaf-project-browse-remote (&optional directory)
   "Open the configured Overleaf project in a browser."
   (interactive)
   (let* ((repo (or (and directory (overleaf-project-root directory))
@@ -2205,7 +2202,7 @@ expiry of the actual Overleaf login session."
       (apply #'min expiries))))
 
 ;;;###autoload
-(defun overleaf-authenticate (&optional url)
+(defun overleaf-project-authenticate (&optional url)
   "Use selenium webdriver to log into URL and obtain cookies.
 If URL is nil, use `overleaf-url'."
   (interactive)
@@ -2265,8 +2262,8 @@ If URL is nil, use `overleaf-url'."
 
 ;;;###autoload
 (defvar-keymap overleaf-command-map
-  "a" #'overleaf-authenticate
-  "b" #'overleaf-browse-project
+  "a" #'overleaf-project-authenticate
+  "b" #'overleaf-project-browse-remote
   "c" #'overleaf-project-clone
   "l" #'overleaf-project-pull
   "p" #'overleaf-project-push
