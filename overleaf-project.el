@@ -1770,6 +1770,28 @@ FINALIZE is called with no arguments after a successful merge."
          sync-branch
          action)))))
 
+(defun overleaf-project--finalize-pending-pull
+    (repo pending remote-root remote-table)
+  "Finalize a pending pull in REPO: upload merged HEAD to Overleaf.
+PENDING must have action=pull and a valid remote-commit.
+REMOTE-ROOT and REMOTE-TABLE describe the current remote state."
+  (let* ((remote-commit (plist-get pending :remote-commit)))
+    (unless remote-commit
+      (user-error "Pending pull metadata is incomplete"))
+    (let* ((head (overleaf-project--rev-parse repo "HEAD"))
+           (project-id (overleaf-project--project-id repo))
+           (remote-tree (overleaf-project--tree-id repo remote-commit)))
+      (unless (overleaf-project--is-ancestor-p repo remote-commit head)
+        (user-error
+         "Merge is not complete; resolve conflicts and commit before pushing"))
+      (overleaf-project--ensure-pending-remote-unchanged
+       repo remote-root remote-tree 'pull)
+      (overleaf-project--upload-head-and-set-base
+       repo head project-id remote-root remote-table
+       "Pushed merged Overleaf pull for `%s'"
+       (overleaf-project--project-name repo))
+      (overleaf-project--clear-pending-state repo))))
+
 (defun overleaf-project--finalize-pending-push
     (repo pending remote-root remote-table)
   "Finalize PENDING push in REPO using REMOTE-ROOT and REMOTE-TABLE."
@@ -1810,7 +1832,6 @@ FINALIZE is called with no arguments after a successful merge."
          (head (plist-get context :head))
          (branch (plist-get context :branch))
          (project-id (overleaf-project--project-id repo))
-         (remote-commit (plist-get context :remote-commit))
          (status (plist-get context :status)))
     (pcase status
       ('in-sync
@@ -1832,18 +1853,9 @@ FINALIZE is called with no arguments after a successful merge."
         "Remote Overleaf changes exist for `%s'; run `overleaf-project-pull` first"
         branch))
       (_
-       (overleaf-project--start-pending-sync
-        repo
-        branch
-        head
-        remote-commit
-        'push
-        (lambda ()
-          (overleaf-project--finalize-pending-push
-           repo
-           (overleaf-project--pending-state repo)
-           remote-root
-           remote-table)))))))
+       (user-error
+        "Remote Overleaf changes exist for `%s'; run `overleaf-project-pull' first"
+        (overleaf-project--project-name repo))))))
 
 (defun overleaf-project--fresh-pull (repo remote-root)
   "Perform a fresh pull of REPO using REMOTE-ROOT."
@@ -2006,19 +2018,26 @@ useful for hooks such as `git-commit-post-finish-hook'."
         (project-id nil))
     (overleaf-project--set-repo-url repo)
     (setq pending (overleaf-project--pending-state repo))
-    (overleaf-project--ensure-pending-action repo pending 'push)
     (overleaf--ensure-authenticated "pushing to Overleaf")
     (if pending
-        (overleaf-project--ensure-clean-working-tree repo "finishing the pending Overleaf push")
+        (overleaf-project--ensure-clean-working-tree repo "finishing the pending Overleaf operation")
       (overleaf-project--prepare-working-tree-for-sync repo))
     (setq project-id (overleaf-project--project-id repo))
     (overleaf-project--with-remote-state
      project-id
      (lambda (remote-root remote-table)
-       (if pending
-           (overleaf-project--finalize-pending-push
-            repo pending remote-root remote-table)
-         (overleaf-project--fresh-push repo remote-root remote-table))))))
+       (pcase (and pending (plist-get pending :action))
+         ('pull
+          (overleaf-project--finalize-pending-pull
+           repo pending remote-root remote-table))
+         ('push
+          (overleaf-project--finalize-pending-push
+           repo pending remote-root remote-table))
+         (_
+          (when pending
+            (user-error "Unknown pending Overleaf action `%s'"
+                        (plist-get pending :action)))
+          (overleaf-project--fresh-push repo remote-root remote-table)))))))
 
 ;;;###autoload
 (defun overleaf-project-push-force (&optional directory)
