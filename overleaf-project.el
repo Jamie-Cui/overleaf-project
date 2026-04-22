@@ -1804,26 +1804,6 @@ FINALIZE is called with no arguments after a successful merge."
      (overleaf-project--project-name repo)
      original-branch)))
 
-(defun overleaf-project--finalize-pending-pull (repo pending remote-root)
-  "Finalize PENDING pull in REPO using REMOTE-ROOT."
-  (let* ((context (overleaf-project--validate-pending-sync repo pending 'pull))
-         (head (plist-get context :head))
-         (original-head (plist-get context :original-head))
-         (original-branch (plist-get context :original-branch))
-         (remote-tree (plist-get context :remote-tree)))
-    (overleaf-project--ensure-pending-remote-unchanged
-     repo remote-root remote-tree 'pull)
-    (overleaf-project--set-base-ref repo head)
-    (overleaf-project--finish-pending-sync
-     repo
-     'pull
-     original-branch
-     original-head
-     head
-     "Pulled Overleaf changes into `%s' and updated branch `%s'"
-     (overleaf-project--project-name repo)
-     original-branch)))
-
 (defun overleaf-project--fresh-push (repo remote-root remote-table)
   "Perform a fresh push of REPO using REMOTE-ROOT and REMOTE-TABLE."
   (let* ((context (overleaf-project--read-sync-state repo remote-root))
@@ -1885,17 +1865,21 @@ FINALIZE is called with no arguments after a successful merge."
        (overleaf-project--set-base-ref repo "HEAD")
        (overleaf--message "Pulled remote Overleaf changes into `%s'" branch))
       (_
-       (overleaf-project--start-pending-sync
-        repo
-        branch
-        head
-        remote-commit
-        'pull
-        (lambda ()
-          (overleaf-project--finalize-pending-pull
-           repo
-           (overleaf-project--pending-state repo)
-           remote-root)))))))
+       (let ((merge-result
+              (overleaf-project--git-run
+               repo
+               (list "merge" "--no-ff" "--no-edit" remote-commit)
+               nil
+               t)))
+         (if (and (integerp (overleaf-project--command-result-status merge-result))
+                  (zerop (overleaf-project--command-result-status merge-result)))
+             (progn
+               (overleaf-project--set-base-ref repo "HEAD")
+               (overleaf--message "Pulled Overleaf changes into `%s'" branch))
+           (overleaf-project--set-pending-pull-state repo remote-commit)
+           (overleaf--warn
+            "Merge conflict on `%s'. Resolve conflicts, commit, then run `overleaf-project-push'."
+            branch)))))))
 
 ;;;; Interactive commands
 
@@ -2081,18 +2065,23 @@ are overwritten by the local `HEAD' snapshot."
 The working tree must be clean before pulling."
   (interactive)
   (let* ((repo (overleaf-project--require-managed-repo directory))
-         (pending nil))
+         (pending (overleaf-project--pending-state repo)))
     (overleaf-project--set-repo-url repo)
-    (setq pending (overleaf-project--pending-state repo))
-    (overleaf-project--ensure-pending-action repo pending 'pull)
+    (when pending
+      (pcase (plist-get pending :action)
+        ('pull
+         (user-error
+          "Unresolved merge conflicts from a previous pull; resolve them, commit, then run `overleaf-project-push'"))
+        ('push
+         (user-error
+          "Pending Overleaf push exists on branch `%s'; finish it before pulling"
+          (plist-get pending :sync-branch)))))
     (overleaf-project--ensure-clean-working-tree repo "pulling from Overleaf")
     (overleaf--ensure-authenticated "pulling from Overleaf")
     (overleaf-project--with-downloaded-snapshot
      (overleaf-project--project-id repo)
      (lambda (remote-root)
-       (if pending
-           (overleaf-project--finalize-pending-pull repo pending remote-root)
-         (overleaf-project--fresh-pull repo remote-root))))))
+       (overleaf-project--fresh-pull repo remote-root)))))
 
 
 
