@@ -21,3 +21,4 @@ data
 /overleaf-server
 /.codex
 .worktrees
+/docs/superpowers/plans/*.md

@@ -234,6 +234,26 @@ automatically after each commit:
 The hook only pushes repositories that already contain Overleaf project
 metadata.
 
+* Magit Status
+
+If you want an Overleaf section inside =magit-status=, load the optional
+=overleaf-project-magit= integration and enable it once:
+
+#+begin_src elisp
+  (with-eval-after-load 'magit
+    (require 'overleaf-project-magit)
+    (overleaf-project-magit-setup))
+#+end_src
+
+For Overleaf-managed repositories, each =magit-status= refresh then also
+starts an asynchronous refresh of the remote Overleaf snapshot.  When
+the download finishes, the status buffer refreshes again and shows the
+remote diff against the last synced base snapshot.
+
+If you prefer to keep remote refresh manual, set
+=overleaf-project-magit-auto-refresh-remote= to =nil=.  You can still
+run ~M-x overleaf-project-magit-refresh-remote~ manually.
+
 * Commands
 
 The main interactive commands are:

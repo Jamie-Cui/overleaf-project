@@ -936,16 +936,18 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
         (format "%s; %s" cookies gclb-cookie)
       cookies)))
 
+(defun overleaf-project--curl-download-args (url output-file headers)
+  "Return curl argument list to download URL into OUTPUT-FILE with HEADERS."
+  (append
+   '("--fail" "--silent" "--show-error" "--location")
+   (apply #'append (mapcar (lambda (h) (list "-H" h)) headers))
+   (list "--output" output-file url)))
+
 (defun overleaf-project--curl-download (url output-file headers)
   "Download URL into OUTPUT-FILE with HEADERS using curl."
-  (let ((args
-         (append
-          '("--fail" "--silent" "--show-error" "--location")
-          (apply
-           #'append
-           (mapcar (lambda (header) (list "-H" header)) headers))
-          (list "--output" output-file url))))
-    (overleaf-project--run overleaf-curl-executable args)))
+  (overleaf-project--run overleaf-curl-executable
+                         (overleaf-project--curl-download-args
+                          url output-file headers)))
 
 (defun overleaf-project--curl-request (method url headers &optional body)
   "Run a curl request with METHOD to URL using HEADERS and optional BODY."

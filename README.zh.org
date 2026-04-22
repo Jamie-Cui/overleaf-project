@@ -226,6 +226,25 @@ push：
 
 这个 hook 只会对已经包含 Overleaf 项目元数据的仓库生效。
 
+* Magit 状态页
+
+如果你希望在 =magit-status= 里看到 Overleaf section，可以加载可选的
+=overleaf-project-magit= 集成，并在初始化时启用一次：
+
+#+begin_src elisp
+  (with-eval-after-load 'magit
+    (require 'overleaf-project-magit)
+    (overleaf-project-magit-setup))
+#+end_src
+
+对于已绑定的 Overleaf 仓库，之后每次 =magit-status= 刷新时，都会异步刷新
+一次远端 Overleaf snapshot。下载完成后，status buffer 会再刷新一次，并显示
+相对于上次同步 base snapshot 的远端 diff。
+
+如果你更希望继续手动刷新远端，可以把
+=overleaf-project-magit-auto-refresh-remote= 设为 =nil=。此时仍然可以手动执行
+~M-x overleaf-project-magit-refresh-remote~。
+
 * 命令
 
 主要交互命令包括：
