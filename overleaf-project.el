@@ -825,22 +825,27 @@ Signal an error on detached HEAD."
   (overleaf-project--git-config-set
    repo "overleaf.pendingAction" (symbol-name action)))
 
+(defun overleaf-project--set-pending-pull-state (repo remote-commit)
+  "Persist a pending pull state inside REPO recording REMOTE-COMMIT."
+  (overleaf-project--git-config-set
+   repo "overleaf.pendingRemoteCommit" remote-commit)
+  (overleaf-project--git-config-set
+   repo "overleaf.pendingAction" "pull"))
+
 (defun overleaf-project--pending-state (repo)
   "Return pending push/pull metadata for REPO, or nil."
-  (when-let* ((sync-branch
-               (overleaf-project--git-config-get
-                repo "overleaf.pendingSyncBranch")))
-    (let ((action
-           (or (overleaf-project--git-config-get repo "overleaf.pendingAction")
-               "push")))
-      `(:sync-branch ,sync-branch
-                     :action ,(intern action)
-                     :original-branch
-                     ,(overleaf-project--git-config-get repo "overleaf.pendingOriginalBranch")
-                     :original-head
-                     ,(overleaf-project--git-config-get repo "overleaf.pendingOriginalHead")
-                     :remote-commit
-                     ,(overleaf-project--git-config-get repo "overleaf.pendingRemoteCommit")))))
+  (when-let* ((action-str
+               (overleaf-project--git-config-get repo "overleaf.pendingAction")))
+    (let ((action (intern action-str)))
+      `(:action ,action
+        :sync-branch
+        ,(overleaf-project--git-config-get repo "overleaf.pendingSyncBranch")
+        :original-branch
+        ,(overleaf-project--git-config-get repo "overleaf.pendingOriginalBranch")
+        :original-head
+        ,(overleaf-project--git-config-get repo "overleaf.pendingOriginalHead")
+        :remote-commit
+        ,(overleaf-project--git-config-get repo "overleaf.pendingRemoteCommit")))))
 
 ;;;; HTTP helpers
 
@@ -1635,9 +1640,9 @@ not modify the working tree or perform a pull/push."
     (let* ((pending-action (or (plist-get pending :action) 'push))
            (pending-command (format "`overleaf-project-%s`"
                                     (symbol-name pending-action)))
-           (sync-branch (plist-get pending :sync-branch))
-           (current-branch (overleaf-project--current-branch repo)))
-      (unless (string= current-branch sync-branch)
+           (sync-branch (plist-get pending :sync-branch)))
+      (when (and sync-branch
+                 (not (string= (overleaf-project--current-branch repo) sync-branch)))
         (user-error
          "Pending Overleaf %s exists on branch `%s'; checkout that branch and rerun %s"
          pending-action
@@ -1645,19 +1650,22 @@ not modify the working tree or perform a pull/push."
          pending-command))
       (unless (eq pending-action action)
         (user-error
-         "Pending Overleaf %s exists on branch `%s'; rerun %s"
+         "Pending Overleaf %s exists; rerun %s"
          pending-action
-         sync-branch
          pending-command)))))
 
 (defun overleaf-project--ensure-no-pending-action (repo command)
   "Signal if REPO still has a pending Overleaf sync before COMMAND."
   (when-let* ((pending (overleaf-project--pending-state repo)))
-    (user-error
-     "Pending Overleaf %s exists on branch `%s'; finish it before %s"
-     (or (plist-get pending :action) 'push)
-     (plist-get pending :sync-branch)
-     command)))
+    (let ((action (or (plist-get pending :action) 'push))
+          (sync-branch (plist-get pending :sync-branch)))
+      (if sync-branch
+          (user-error
+           "Pending Overleaf %s exists on branch `%s'; finish it before %s"
+           action sync-branch command)
+        (user-error
+         "Pending Overleaf %s exists; finish it before %s"
+         action command)))))
 
 (defun overleaf-project--validate-pending-sync (repo pending action)
   "Validate PENDING sync metadata for REPO and ACTION.
