@@ -108,10 +108,6 @@ The cookies are usually obtained and refreshed via
   "Git ref that stores the last successfully synchronized snapshot."
   :type 'string)
 
-(defcustom overleaf-project-sync-branch-prefix "overleaf-sync/"
-  "Prefix for branches created during Overleaf merge conflict resolution."
-  :type 'string)
-
 (defcustom overleaf-project-socket-timeout 15
   "Seconds to wait for the Overleaf project tree websocket response."
   :type 'integer)
@@ -1433,21 +1429,6 @@ Return the created commit id."
 
 ;;;; Project sync internals
 
-(defun overleaf-project--create-sync-branch-name (repo)
-  "Return a fresh sync branch name for REPO."
-  (let* ((base
-          (format "%s%s"
-                  overleaf-project-sync-branch-prefix
-                  (format-time-string "%Y%m%d-%H%M%S")))
-         (candidate base)
-         (suffix 1))
-    (while (overleaf-project--rev-parse-noerror
-            repo
-            (format "refs/heads/%s" candidate))
-      (setq candidate (format "%s-%d" base suffix))
-      (setq suffix (1+ suffix)))
-    candidate))
-
 (defun overleaf-project--sync-local-tree
     (project-id local-root remote-root remote-table)
   "Synchronize LOCAL-ROOT into PROJECT-ID using REMOTE-ROOT and REMOTE-TABLE."
@@ -1746,30 +1727,6 @@ and FORMAT-STRING with ARGS is passed to `overleaf--message'."
   (overleaf-project--set-base-ref repo head)
   (apply #'overleaf--message format-string args))
 
-(defun overleaf-project--start-pending-sync
-    (repo branch head remote-commit action finalize)
-  "Create a pending sync branch for ACTION and merge REMOTE-COMMIT.
-FINALIZE is called with no arguments after a successful merge."
-  (let ((sync-branch (overleaf-project--create-sync-branch-name repo)))
-    (overleaf-project--git-output repo "branch" sync-branch head)
-    (overleaf-project--git-output repo "checkout" sync-branch)
-    (overleaf-project--set-pending-state
-     repo branch head sync-branch remote-commit action)
-    (let ((merge-result
-           (overleaf-project--git-run
-            repo
-            (list "merge" "--no-ff" "--no-edit" remote-commit)
-            nil
-            t)))
-      (if (and (integerp (overleaf-project--command-result-status merge-result))
-               (zerop (overleaf-project--command-result-status merge-result)))
-          (funcall finalize)
-        (overleaf--warn
-         "Overleaf %s needs manual conflict resolution on branch `%s'. Resolve the merge, commit it, then rerun `overleaf-project-%s`."
-         action
-         sync-branch
-         action)))))
-
 (defun overleaf-project--finalize-pending-pull
     (repo pending remote-root remote-table)
   "Finalize a pending pull in REPO: upload merged HEAD to Overleaf.
@@ -1991,6 +1948,11 @@ Staged changes are committed automatically before the remote snapshot is
 fetched.  When unstaged changes exist, prompt whether to stage them
 first.
 
+If a pending pull exists (merge conflict from a previous pull), verifies
+the merge is complete and uploads the merged result.  If the remote has
+diverged and no pending pull exists, signals an error asking you to run
+`overleaf-project-pull' first.
+
 When NOERROR is non-nil, silently return nil if DIRECTORY is not a
 managed Overleaf repo, and demote push errors to warnings.  This is
 useful for hooks such as `git-commit-post-finish-hook'."
@@ -2081,7 +2043,14 @@ are overwritten by the local `HEAD' snapshot."
 ;;;###autoload
 (defun overleaf-project-pull (&optional directory)
   "Pull the latest Overleaf snapshot into the current Git repo.
-The working tree must be clean before pulling."
+The working tree must be clean before pulling.
+
+When the local branch has diverged from the remote, performs a
+`git merge --no-ff --no-edit' directly on the current branch.  If the
+merge succeeds, updates the base ref immediately.  If there are
+conflicts, records a pending-pull state and prompts you to resolve the
+conflicts, commit, then run `overleaf-project-push' to complete the
+sync."
   (interactive)
   (let* ((repo (overleaf-project--require-managed-repo directory))
          (pending (overleaf-project--pending-state repo)))
