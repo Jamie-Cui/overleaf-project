@@ -45,6 +45,22 @@ English README: [[file:README.org][README.org]]
 
 如果要通过浏览器辅助认证，还需要安装 =geckodriver= (https://github.com/mozilla/geckodriver)。
 
+* 开发
+
+仓库内置了一个简单的 =Makefile=，方便做本地验证：
+
+#+begin_example
+make
+make help
+make clean
+#+end_example
+
+如果你的 Emacs 可执行文件在 =PATH= 中不是 =emacs=，可以显式覆盖：
+
+#+begin_example
+make EMACS=/path/to/Emacs
+#+end_example
+
 * 认证
 
 在 clone、push 或 pull 之前，你需要有效的 Overleaf 会话 cookies。

@@ -48,6 +48,22 @@ Project push/pull expects these executables to be available:
 
 Optional authentication through the browser also needs =geckodriver= (https://github.com/mozilla/geckodriver).
 
+* Development
+
+For local validation, the repository includes a small =Makefile=:
+
+#+begin_example
+make
+make help
+make clean
+#+end_example
+
+If your Emacs binary is not available on =PATH= as =emacs=, override it explicitly:
+
+#+begin_example
+make EMACS=/path/to/Emacs
+#+end_example
+
 * Authentication
 
 You need valid Overleaf session cookies before cloning, pushing, or pulling.
