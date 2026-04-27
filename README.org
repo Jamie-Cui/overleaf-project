@@ -27,7 +27,7 @@ Add the package to your load path and require ~overleaf-project~, or use
 #+end_src
 
 The package targets Emacs 29.4+ and depends on the Elisp packages
-=plz=, =websocket= and =webdriver=.
+=websocket= and =webdriver=.
 
 The package feature is named ~overleaf-project~.  Interactive commands
 and customization variables keep the ~overleaf-~ prefix.
@@ -307,6 +307,8 @@ Useful options include:
 - ~overleaf-project-sync-auto-commit-message~ for the automatic local checkpoint commit before pushing
 - ~overleaf-project-sync-branch-prefix~ to rename conflict branches
 - ~overleaf-project-socket-timeout~ if project tree websocket fetches need longer
+- ~overleaf-curl-connect-timeout~ and ~overleaf-curl-max-time~ to cap
+  blocking curl calls during Overleaf HTTP requests
 - ~overleaf-git-executable~, ~overleaf-curl-executable~ and
   ~overleaf-unzip-executable~ if the tools are not on your =PATH=
 
