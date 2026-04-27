@@ -2,6 +2,7 @@ EMACS ?= emacs
 PACKAGE_INIT = (progn (require 'package) (package-initialize))
 EMACS_BATCH = $(EMACS) -Q --batch -L . --eval "$(PACKAGE_INIT)"
 MODULE_ELC_FILES = \
+	overleaf-project-log.elc \
 	overleaf-project-core.elc \
 	overleaf-project-http.elc \
 	overleaf-project-sync.elc \
@@ -15,7 +16,10 @@ all: compile
 
 compile: $(ELC_FILES)
 
-overleaf-project-core.elc: overleaf-project-core.el
+overleaf-project-log.elc: overleaf-project-log.el
+	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-log.el
+
+overleaf-project-core.elc: overleaf-project-core.el overleaf-project-log.elc
 	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-core.el
 
 overleaf-project-http.elc: overleaf-project-http.el overleaf-project-core.elc

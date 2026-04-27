@@ -21,55 +21,33 @@
   "Return the async lock key for REPO."
   (format "repo:%s" (directory-file-name (expand-file-name repo))))
 
-(defun overleaf-project--authentication-needed-reason ()
-  "Return a user-facing reason when the current Overleaf cookies are unusable."
-  (let* ((host (overleaf--url-host))
-         (state (overleaf--cookie-state))
-         (status (plist-get state :status)))
-    (pcase status
-      ('expired
-       (format
-        "Cookies for %s are expired according to the locally saved expiry time."
-        host))
-      ('missing
-       (format "Cookies for %s are not set locally." host))
-      (_ nil))))
-
 (defun overleaf-project--ensure-authenticated-async (action continuation)
   "Ensure cookies are usable, then call CONTINUATION in the foreground.
 When authentication is needed, run browser authentication in the
 background before calling CONTINUATION."
-  (if (eq (plist-get (overleaf--cookie-state) :status) 'valid)
-      (funcall continuation)
-    (let ((reason (overleaf-project--authentication-needed-reason)))
-      (if (or noninteractive
-              (not
-               (let ((use-dialog-box nil))
-                 (y-or-n-p
-                  (format "%s Re-run `overleaf-project-authenticate` now? "
-                          reason)))))
-          (user-error
-           "%s Run `overleaf-project-authenticate` before %s"
-           reason
-           (or action "continuing"))
-        (overleaf-project--async-start
-         (format "Overleaf authentication for %s" (overleaf--url-host))
-         (lambda ()
-           (overleaf-project--authenticate-1 overleaf-url))
-         :key (format "auth:%s" (overleaf--url))
-         :on-success
-         (lambda (full-cookies)
-           (overleaf-project--clear-csrf-cache)
-           (setq overleaf--current-cookies
-                 (overleaf--normalize-full-cookies full-cookies))
-           (overleaf--message "Authentication finished for %s"
-                              (overleaf--cookie-domain))
-           (funcall continuation)))))))
+  (let ((state (overleaf-project--cookie-state)))
+    (if (eq (plist-get state :status) 'valid)
+	(funcall continuation)
+      (let ((reason (overleaf-project--authentication-needed-reason state)))
+	(if (or noninteractive
+		(not
+		 (let ((use-dialog-box nil))
+                   (y-or-n-p
+                    (format "%s Re-run `overleaf-project-authenticate` now? "
+                            reason)))))
+            (user-error
+             "%s Run `overleaf-project-authenticate` before %s"
+             reason
+             (or action "continuing"))
+          (overleaf-project--start-authentication-async
+           overleaf-project-url
+           (lambda (_full-cookies)
+             (funcall continuation))))))))
 
 (defun overleaf-project--read-project-async (url continuation)
   "Fetch projects from URL in the background, then call CONTINUATION."
   (overleaf-project--async-start
-   (format "Overleaf project list from %s" (overleaf--url-host))
+   (format "Overleaf project list from %s" (overleaf-project--url-host))
    (lambda ()
      (overleaf-project-list url))
    :key (format "project-list:%s" url)
@@ -101,39 +79,41 @@ background before calling CONTINUATION."
 
 (defun overleaf-project--clone-selected-project (url project target)
   "Synchronously clone PROJECT from URL into TARGET."
-  (let ((overleaf-url url)
+  (let ((overleaf-project-url url)
         (target (directory-file-name (expand-file-name target)))
         (repo nil))
-    (overleaf-project--validate-clone-target target)
-    (overleaf-project--with-downloaded-snapshot
-     (plist-get project :id)
-     (lambda (snapshot-root)
-       (make-directory target t)
-       (overleaf-project--copy-directory-contents snapshot-root target)
-       (setq repo target)
-       (overleaf-project--git-output repo "init")
-       (overleaf-project--write-repo-metadata repo project)
-       (overleaf-project--prepare-sync-metadata-repo repo)
-       (overleaf-project--git-output repo "add" "--all" ".")
-       (apply
-        #'overleaf-project--git-output
-        repo
-        (append
-         (overleaf-project--git-identity-args repo)
-         '("commit" "-m" "chore: import project from Overleaf")))
-       (overleaf-project--set-base-ref repo "HEAD")
-       (overleaf--message
-        "Cloned `%s' into %s"
-        (plist-get project :name)
-        target)))))
+    (overleaf-project-log-with-context
+     (overleaf-project--log-context-for-project project target)
+     (overleaf-project--validate-clone-target target)
+     (overleaf-project--with-downloaded-snapshot
+      (plist-get project :id)
+      (lambda (snapshot-root)
+        (make-directory target t)
+        (overleaf-project--copy-directory-contents snapshot-root target)
+        (setq repo target)
+        (overleaf-project--git-output repo "init")
+        (overleaf-project--write-repo-metadata repo project)
+        (overleaf-project--prepare-sync-metadata-repo repo)
+        (overleaf-project--git-output repo "add" "--all" ".")
+        (apply
+         #'overleaf-project--git-output
+         repo
+         (append
+          (overleaf-project--git-identity-args repo)
+          '("commit" "-m" "chore: import project from Overleaf")))
+        (overleaf-project--set-base-ref repo "HEAD")
+        (overleaf-project--message
+         "Cloned `%s' into %s"
+         (plist-get project :name)
+         target))))))
 
 (defun overleaf-project--clone-1 (&optional url target-directory)
   "Synchronously clone a full Overleaf project into TARGET-DIRECTORY."
-  (let* ((url (or url (overleaf--url)))
+  (let* ((url (or url (overleaf-project--url)))
          (project nil)
          (target nil))
-    (setq overleaf-url url)
-    (overleaf--ensure-authenticated "cloning from Overleaf")
+    (setq overleaf-project-url url)
+    (overleaf-project--ensure-authenticated "cloning from Overleaf")
     (setq project (overleaf-project--read-project url))
     (setq target
           (overleaf-project--clone-target-directory project target-directory))
@@ -142,8 +122,8 @@ background before calling CONTINUATION."
 
 (defun overleaf-project--clone-async (&optional url target-directory)
   "Start an asynchronous clone into TARGET-DIRECTORY."
-  (let ((url (or url (overleaf--url))))
-    (setq overleaf-url url)
+  (let ((url (or url (overleaf-project--url))))
+    (setq overleaf-project-url url)
     (overleaf-project--ensure-authenticated-async
      "cloning from Overleaf"
      (lambda ()
@@ -155,11 +135,13 @@ background before calling CONTINUATION."
                   project
                   target-directory)))
             (overleaf-project--validate-clone-target target)
-            (overleaf-project--async-start
-             (format "Overleaf clone `%s'" (plist-get project :name))
-             (lambda ()
-               (overleaf-project--clone-selected-project url project target))
-             :key (format "clone:%s" target)))))))))
+            (overleaf-project-log-with-context
+             (overleaf-project--log-context-for-project project target)
+             (overleaf-project--async-start
+              (format "Overleaf clone `%s'" (plist-get project :name))
+              (lambda ()
+                (overleaf-project--clone-selected-project url project target))
+              :key (format "clone:%s" target))))))))))
 
 (defun overleaf-project--init-confirm-p (repo current-id current-name project)
   "Return non-nil if initializing REPO for PROJECT should continue."
@@ -178,16 +160,18 @@ background before calling CONTINUATION."
 
 (defun overleaf-project--init-selected-project (repo project)
   "Synchronously bind REPO to PROJECT and initialize its base snapshot."
-  (overleaf-project--ensure-no-pending-action repo "reconfiguring the repository")
-  (overleaf-project--prepare-sync-metadata-repo repo)
-  (overleaf-project--with-downloaded-snapshot
-   (plist-get project :id)
-   (lambda (snapshot-root)
-     (overleaf-project--initialize-base-ref repo project snapshot-root)
-     (overleaf--message
-      "Configured `%s' to track Overleaf project `%s' without pulling or pushing"
-      repo
-      (plist-get project :name)))))
+  (overleaf-project-log-with-context
+   (overleaf-project--log-context-for-project project repo)
+   (overleaf-project--ensure-no-pending-action repo "reconfiguring the repository")
+   (overleaf-project--prepare-sync-metadata-repo repo)
+   (overleaf-project--with-downloaded-snapshot
+    (plist-get project :id)
+    (lambda (snapshot-root)
+      (overleaf-project--initialize-base-ref repo project snapshot-root)
+      (overleaf-project--message
+       "Configured `%s' to track Overleaf project `%s' without pulling or pushing"
+       repo
+       (plist-get project :name))))))
 
 (defun overleaf-project--init-1 (&optional directory url confirm)
   "Synchronously bind DIRECTORY to an Overleaf project on URL.
@@ -199,10 +183,10 @@ When CONFIRM is non-nil, ask before rebinding an existing project."
     (overleaf-project--ensure-no-pending-action repo "reconfiguring the repository")
     (overleaf-project--set-repo-url repo url)
     (overleaf-project--prepare-sync-metadata-repo repo)
-    (overleaf--ensure-authenticated "configuring the Overleaf project")
-    (setq current-id (overleaf-project--git-config-get repo "overleaf.projectId"))
-    (setq current-name (overleaf-project--git-config-get repo "overleaf.projectName"))
-    (setq project (overleaf-project--read-project overleaf-url))
+    (overleaf-project--ensure-authenticated "configuring the Overleaf project")
+    (setq current-id (overleaf-project--git-config-get repo "overleaf-project.projectId"))
+    (setq current-name (overleaf-project--git-config-get repo "overleaf-project.projectName"))
+    (setq project (overleaf-project--read-project overleaf-project-url))
     (when (and confirm
                (not
                 (overleaf-project--init-confirm-p
@@ -217,23 +201,25 @@ When CONFIRM is non-nil, ask before rebinding an existing project."
          (current-name nil))
     (overleaf-project--ensure-no-pending-action repo "reconfiguring the repository")
     (overleaf-project--set-repo-url repo url)
-    (setq current-id (overleaf-project--git-config-get repo "overleaf.projectId"))
-    (setq current-name (overleaf-project--git-config-get repo "overleaf.projectName"))
+    (setq current-id (overleaf-project--git-config-get repo "overleaf-project.projectId"))
+    (setq current-name (overleaf-project--git-config-get repo "overleaf-project.projectName"))
     (overleaf-project--ensure-authenticated-async
      "configuring the Overleaf project"
      (lambda ()
        (overleaf-project--read-project-async
-        overleaf-url
+        overleaf-project-url
         (lambda (project)
           (when (not
                  (overleaf-project--init-confirm-p
                   repo current-id current-name project))
             (user-error "Aborted"))
-          (overleaf-project--async-start
-           (format "Overleaf init `%s'" repo)
-           (lambda ()
-             (overleaf-project--init-selected-project repo project))
-           :key (overleaf-project--repo-async-key repo))))))))
+          (overleaf-project-log-with-context
+           (overleaf-project--log-context-for-project project repo)
+           (overleaf-project--async-start
+            (format "Overleaf init `%s'" repo)
+            (lambda ()
+              (overleaf-project--init-selected-project repo project))
+            :key (overleaf-project--repo-async-key repo)))))))))
 
 (defun overleaf-project--push-unstaged-action (repo noerror)
   "Return the unstaged-change action for pushing REPO.
@@ -261,98 +247,101 @@ When NOERROR is non-nil, do not prompt."
 (defun overleaf-project--push-async (repo noerror)
   "Start an asynchronous push for REPO.
 When NOERROR is non-nil, demote setup and background errors to warnings."
-  (condition-case err
-      (let* ((pending nil)
-             (unstaged-action nil)
-             (name nil))
-        (overleaf-project--set-repo-url repo)
-        (setq pending (overleaf-project--pending-state repo))
-        (if pending
-            (overleaf-project--ensure-clean-working-tree
-             repo
-             "finishing the pending Overleaf operation")
-          (setq unstaged-action
-                (overleaf-project--push-unstaged-action repo noerror)))
-        (setq name (format "Overleaf push `%s'"
-                           (overleaf-project--project-name repo)))
-        (cl-labels
-            ((start ()
-               (overleaf-project--async-start
-                name
-                (lambda ()
-                  (overleaf-project--push-1 repo unstaged-action t))
-                :key (overleaf-project--repo-async-key repo)
-                :on-error
-                (lambda (message)
-                  (if noerror
-                      (overleaf--warn
-                       "Automatic Overleaf push failed for %s: %s"
-                       repo message)
-                    (overleaf--warn "%s failed: %s" name message))))))
-          (if noerror
-              (progn
-                (overleaf--get-cookies)
-                (start))
-            (overleaf-project--ensure-authenticated-async
-             "pushing to Overleaf"
-             #'start))))
-    (error
-     (if noerror
-         (overleaf--warn "Automatic Overleaf push failed for %s: %s"
-                         repo (error-message-string err))
-       (signal (car err) (cdr err))))))
+  (overleaf-project--with-repo-log-context repo
+					   (condition-case err
+					       (let* ((pending nil)
+						      (unstaged-action nil)
+						      (name nil))
+						 (overleaf-project--set-repo-url repo)
+						 (setq pending (overleaf-project--pending-state repo))
+						 (if pending
+						     (overleaf-project--ensure-clean-working-tree
+						      repo
+						      "finishing the pending Overleaf operation")
+						   (setq unstaged-action
+							 (overleaf-project--push-unstaged-action repo noerror)))
+						 (setq name (format "Overleaf push `%s'"
+								    (overleaf-project--project-name repo)))
+						 (cl-labels
+						     ((start ()
+							(overleaf-project--async-start
+							 name
+							 (lambda ()
+							   (overleaf-project--push-1 repo unstaged-action t))
+							 :key (overleaf-project--repo-async-key repo)
+							 :on-error
+							 (lambda (message)
+							   (if noerror
+							       (overleaf-project--warn
+								"Automatic Overleaf push failed for %s: %s"
+								repo message)
+							     (overleaf-project--warn "%s failed: %s" name message))))))
+						   (if noerror
+						       (progn
+							 (overleaf-project--get-cookies)
+							 (start))
+						     (overleaf-project--ensure-authenticated-async
+						      "pushing to Overleaf"
+						      #'start))))
+					     (error
+					      (if noerror
+						  (overleaf-project--warn "Automatic Overleaf push failed for %s: %s"
+									  repo (error-message-string err))
+						(signal (car err) (cdr err)))))))
 
 (defun overleaf-project--overwrite-remote-async (repo)
   "Start an asynchronous remote overwrite for REPO."
-  (overleaf-project--ensure-no-pending-action repo "overwriting the Overleaf remote")
-  (overleaf-project--set-repo-url repo)
-  (when (not
-         (yes-or-no-p
-          (format
-           "Overwrite Overleaf project `%s' with local HEAD? This will replace remote files. "
-           (overleaf-project--project-name repo))))
-    (user-error "Aborted"))
-  (let ((unstaged-action
-         (overleaf-project--push-unstaged-action repo nil)))
-    (overleaf-project--ensure-authenticated-async
-     "overwriting the Overleaf remote"
-     (lambda ()
-       (overleaf-project--async-start
-        (format "Overleaf remote overwrite `%s'"
-                (overleaf-project--project-name repo))
-        (lambda ()
-          (overleaf-project--overwrite-remote-1 repo unstaged-action t))
-        :key (overleaf-project--repo-async-key repo))))))
+  (overleaf-project--with-repo-log-context repo
+					   (overleaf-project--ensure-no-pending-action repo "overwriting the Overleaf remote")
+					   (overleaf-project--set-repo-url repo)
+					   (when (not
+						  (yes-or-no-p
+						   (format
+						    "Overwrite Overleaf project `%s' with local HEAD? This will replace remote files. "
+						    (overleaf-project--project-name repo))))
+					     (user-error "Aborted"))
+					   (let ((unstaged-action
+						  (overleaf-project--push-unstaged-action repo nil)))
+					     (overleaf-project--ensure-authenticated-async
+					      "overwriting the Overleaf remote"
+					      (lambda ()
+						(overleaf-project--async-start
+						 (format "Overleaf remote overwrite `%s'"
+							 (overleaf-project--project-name repo))
+						 (lambda ()
+						   (overleaf-project--overwrite-remote-1 repo unstaged-action t))
+						 :key (overleaf-project--repo-async-key repo)))))))
 
 (defun overleaf-project--pull-async (repo)
   "Start an asynchronous pull for REPO."
-  (overleaf-project--set-repo-url repo)
-  (let ((pending (overleaf-project--pending-state repo)))
-    (when pending
-      (pcase (plist-get pending :action)
-        ('pull
-         (user-error
-          "Unresolved merge conflicts from a previous pull; resolve them, commit, then run `overleaf-project-push'"))
-        ('push
-         (user-error
-          "Pending Overleaf push exists on branch `%s'; finish it before pulling"
-          (plist-get pending :sync-branch)))))
-    (overleaf-project--ensure-clean-working-tree repo "pulling from Overleaf"))
-  (overleaf-project--ensure-authenticated-async
-   "pulling from Overleaf"
-   (lambda ()
-     (overleaf-project--async-start
-      (format "Overleaf pull `%s'" (overleaf-project--project-name repo))
-      (lambda ()
-        (overleaf-project--pull-1 repo t))
-      :key (overleaf-project--repo-async-key repo)))))
+  (overleaf-project--with-repo-log-context repo
+					   (overleaf-project--set-repo-url repo)
+					   (let ((pending (overleaf-project--pending-state repo)))
+					     (when pending
+					       (pcase (plist-get pending :action)
+						 ('pull
+						  (user-error
+						   "Unresolved merge conflicts from a previous pull; resolve them, commit, then run `overleaf-project-push'"))
+						 ('push
+						  (user-error
+						   "Pending Overleaf push exists on branch `%s'; finish it before pulling"
+						   (plist-get pending :sync-branch)))))
+					     (overleaf-project--ensure-clean-working-tree repo "pulling from Overleaf"))
+					   (overleaf-project--ensure-authenticated-async
+					    "pulling from Overleaf"
+					    (lambda ()
+					      (overleaf-project--async-start
+					       (format "Overleaf pull `%s'" (overleaf-project--project-name repo))
+					       (lambda ()
+						 (overleaf-project--pull-1 repo t))
+					       :key (overleaf-project--repo-async-key repo))))))
 
 ;;;; Interactive commands
 
 ;;;###autoload
 (defun overleaf-project-clone (&optional url target-directory)
   "Clone a full Overleaf project into TARGET-DIRECTORY.
-If URL is nil, use `overleaf-url'."
+If URL is nil, use `overleaf-project-url'."
   (interactive)
   (if (and (called-interactively-p 'interactive)
            (overleaf-project--async-command-enabled-p))
@@ -395,18 +384,19 @@ useful for hooks such as `git-commit-post-finish-hook'."
       (if noerror
           nil
         (user-error "Repository %s is not configured as an Overleaf project"
-                     (or repo default-directory))))
+                    (or repo default-directory))))
      ((or (and (called-interactively-p 'interactive)
                (overleaf-project--async-command-enabled-p))
           (and noerror
                (overleaf-project--async-command-enabled-p)))
       (overleaf-project--push-async repo noerror))
      (noerror
-      (condition-case err
-          (overleaf-project--push-1 repo)
-        (error
-         (overleaf--warn "Automatic Overleaf push failed for %s: %s"
-                         repo (error-message-string err)))))
+      (overleaf-project--with-repo-log-context repo
+					       (condition-case err
+						   (overleaf-project--push-1 repo)
+						 (error
+						  (overleaf-project--warn "Automatic Overleaf push failed for %s: %s"
+									  repo (error-message-string err))))))
      (t
       (overleaf-project--push-1 repo)))))
 
@@ -415,32 +405,33 @@ useful for hooks such as `git-commit-post-finish-hook'."
 UNSTAGED-ACTION is passed to
 `overleaf-project--prepare-working-tree-for-sync'.  When SKIP-AUTH is
 non-nil, assume the caller already checked authentication."
-  (let ((pending nil)
-        (project-id nil))
-    (overleaf-project--set-repo-url repo)
-    (overleaf-project--prepare-sync-metadata-repo repo)
-    (setq pending (overleaf-project--pending-state repo))
-    (unless skip-auth
-      (overleaf--ensure-authenticated "pushing to Overleaf"))
-    (if pending
-        (overleaf-project--ensure-clean-working-tree repo "finishing the pending Overleaf operation")
-      (overleaf-project--prepare-working-tree-for-sync repo unstaged-action))
-    (setq project-id (overleaf-project--project-id repo))
-    (overleaf-project--with-remote-state
-     project-id
-     (lambda (remote-root remote-table)
-       (pcase (and pending (plist-get pending :action))
-         ('pull
-          (overleaf-project--finalize-pending-pull
-           repo pending remote-root remote-table))
-         ('push
-          (overleaf-project--finalize-pending-push
-           repo pending remote-root remote-table))
-         (_
-          (when pending
-            (user-error "Unknown pending Overleaf action `%s'"
-                        (plist-get pending :action)))
-          (overleaf-project--fresh-push repo remote-root remote-table)))))))
+  (overleaf-project--with-repo-log-context repo
+					   (let ((pending nil)
+						 (project-id nil))
+					     (overleaf-project--set-repo-url repo)
+					     (overleaf-project--prepare-sync-metadata-repo repo)
+					     (setq pending (overleaf-project--pending-state repo))
+					     (unless skip-auth
+					       (overleaf-project--ensure-authenticated "pushing to Overleaf"))
+					     (if pending
+						 (overleaf-project--ensure-clean-working-tree repo "finishing the pending Overleaf operation")
+					       (overleaf-project--prepare-working-tree-for-sync repo unstaged-action))
+					     (setq project-id (overleaf-project--project-id repo))
+					     (overleaf-project--with-remote-state
+					      project-id
+					      (lambda (remote-root remote-table)
+						(pcase (and pending (plist-get pending :action))
+						  ('pull
+						   (overleaf-project--finalize-pending-pull
+						    repo pending remote-root remote-table))
+						  ('push
+						   (overleaf-project--finalize-pending-push
+						    repo pending remote-root remote-table))
+						  (_
+						   (when pending
+						     (user-error "Unknown pending Overleaf action `%s'"
+								 (plist-get pending :action)))
+						   (overleaf-project--fresh-push repo remote-root remote-table))))))))
 
 ;;;###autoload
 (defun overleaf-project-overwrite-remote (&optional directory)
@@ -467,33 +458,34 @@ are replaced by the local `HEAD' snapshot."
 UNSTAGED-ACTION is passed to
 `overleaf-project--prepare-working-tree-for-sync'.  When SKIP-AUTH is
 non-nil, assume the caller already checked authentication."
-  (let ((project-id nil)
-        (context nil))
-    (overleaf-project--ensure-no-pending-action repo "overwriting the Overleaf remote")
-    (overleaf-project--set-repo-url repo)
-    (overleaf-project--prepare-sync-metadata-repo repo)
-    (setq project-id (overleaf-project--project-id repo))
-    (unless skip-auth
-      (overleaf--ensure-authenticated "overwriting the Overleaf remote"))
-    (overleaf-project--prepare-working-tree-for-sync repo unstaged-action)
-    (overleaf-project--with-remote-state
-     project-id
-     (lambda (remote-root remote-table)
-       (setq context (overleaf-project--read-sync-state repo remote-root))
-       (if (memq (plist-get context :status) '(in-sync head-matches-remote))
-           (overleaf-project--note-matching-sync-state
-            repo
-            (plist-get context :head)
-            project-id
-            remote-table)
-         (overleaf-project--upload-head-and-set-base
-          repo
-         (plist-get context :head)
-         project-id
-         remote-root
-         remote-table
-          "Overwrote Overleaf project `%s' with local HEAD"
-          (overleaf-project--project-name repo)))))))
+  (overleaf-project--with-repo-log-context repo
+					   (let ((project-id nil)
+						 (context nil))
+					     (overleaf-project--ensure-no-pending-action repo "overwriting the Overleaf remote")
+					     (overleaf-project--set-repo-url repo)
+					     (overleaf-project--prepare-sync-metadata-repo repo)
+					     (setq project-id (overleaf-project--project-id repo))
+					     (unless skip-auth
+					       (overleaf-project--ensure-authenticated "overwriting the Overleaf remote"))
+					     (overleaf-project--prepare-working-tree-for-sync repo unstaged-action)
+					     (overleaf-project--with-remote-state
+					      project-id
+					      (lambda (remote-root remote-table)
+						(setq context (overleaf-project--read-sync-state repo remote-root))
+						(if (memq (plist-get context :status) '(in-sync head-matches-remote))
+						    (overleaf-project--note-matching-sync-state
+						     repo
+						     (plist-get context :head)
+						     project-id
+						     remote-table)
+						  (overleaf-project--upload-head-and-set-base
+						   repo
+						   (plist-get context :head)
+						   project-id
+						   remote-root
+						   remote-table
+						   "Overwrote Overleaf project `%s' with local HEAD"
+						   (overleaf-project--project-name repo))))))))
 
 ;;;###autoload
 (defun overleaf-project-pull (&optional directory)
@@ -517,25 +509,26 @@ commit, then run `overleaf-project-push' to complete the sync."
   "Synchronously pull the latest Overleaf snapshot into REPO.
 When SKIP-AUTH is non-nil, assume the caller already checked
 authentication."
-  (let ((pending (overleaf-project--pending-state repo)))
-    (overleaf-project--set-repo-url repo)
-    (overleaf-project--prepare-sync-metadata-repo repo)
-    (when pending
-      (pcase (plist-get pending :action)
-        ('pull
-         (user-error
-          "Unresolved merge conflicts from a previous pull; resolve them, commit, then run `overleaf-project-push'"))
-        ('push
-         (user-error
-          "Pending Overleaf push exists on branch `%s'; finish it before pulling"
-          (plist-get pending :sync-branch)))))
-    (overleaf-project--ensure-clean-working-tree repo "pulling from Overleaf")
-    (unless skip-auth
-      (overleaf--ensure-authenticated "pulling from Overleaf"))
-    (overleaf-project--with-downloaded-snapshot
-     (overleaf-project--project-id repo)
-     (lambda (remote-root)
-       (overleaf-project--fresh-pull repo remote-root)))))
+  (overleaf-project--with-repo-log-context repo
+					   (let ((pending (overleaf-project--pending-state repo)))
+					     (overleaf-project--set-repo-url repo)
+					     (overleaf-project--prepare-sync-metadata-repo repo)
+					     (when pending
+					       (pcase (plist-get pending :action)
+						 ('pull
+						  (user-error
+						   "Unresolved merge conflicts from a previous pull; resolve them, commit, then run `overleaf-project-push'"))
+						 ('push
+						  (user-error
+						   "Pending Overleaf push exists on branch `%s'; finish it before pulling"
+						   (plist-get pending :sync-branch)))))
+					     (overleaf-project--ensure-clean-working-tree repo "pulling from Overleaf")
+					     (unless skip-auth
+					       (overleaf-project--ensure-authenticated "pulling from Overleaf"))
+					     (overleaf-project--with-downloaded-snapshot
+					      (overleaf-project--project-id repo)
+					      (lambda (remote-root)
+						(overleaf-project--fresh-pull repo remote-root))))))
 
 
 
@@ -549,7 +542,7 @@ authentication."
         (progn
           (overleaf-project--set-repo-url repo)
           (browse-url
-           (overleaf--project-page-url
+           (overleaf-project--project-page-url
             (overleaf-project--project-id repo))))
       (if (and (called-interactively-p 'interactive)
                (overleaf-project--async-command-enabled-p))
@@ -557,13 +550,13 @@ authentication."
            "selecting an Overleaf project"
            (lambda ()
              (overleaf-project--read-project-async
-              overleaf-url
+              overleaf-project-url
               (lambda (project)
                 (browse-url
-                 (overleaf--project-page-url
+                 (overleaf-project--project-page-url
                   (plist-get project :id)))))))
         (browse-url
-         (overleaf--project-page-url
+         (overleaf-project--project-page-url
           (plist-get (overleaf-project--read-project) :id)))))))
 
 ;;;; Command map

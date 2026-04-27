@@ -26,16 +26,16 @@
 (defun overleaf-project--base-headers (&optional referer extra-headers)
   "Return basic authenticated headers with REFERER and EXTRA-HEADERS."
   (append
-   `(("Cookie" . ,(overleaf--get-cookies))
-     ("Origin" . ,(overleaf--url))
-     ("Referer" . ,(or referer (overleaf--url))))
+   `(("Cookie" . ,(overleaf-project--get-cookies))
+     ("Origin" . ,(overleaf-project--url))
+     ("Referer" . ,(or referer (overleaf-project--url))))
    extra-headers))
 
 (defun overleaf-project--project-headers (&optional project-id extra-headers)
   "Return mutation headers for PROJECT-ID with EXTRA-HEADERS appended."
   (append
    (overleaf-project--base-headers
-    (and project-id (overleaf--project-page-url project-id)))
+    (and project-id (overleaf-project--project-page-url project-id)))
    (when project-id
      `(("Accept" . "application/json")
        ("Cache-Control" . "no-cache")
@@ -45,35 +45,35 @@
 (defun overleaf-project--csrf-cache-key (project-id &optional cookies)
   "Return the csrf cache key for PROJECT-ID and COOKIES."
   (format "%s|%s|%s"
-          (overleaf--url)
+          (overleaf-project--url)
           project-id
-          (secure-hash 'sha1 (or cookies (overleaf--get-cookies)))))
+          (secure-hash 'sha1 (or cookies (overleaf-project--get-cookies)))))
 
 (defun overleaf-project--clear-csrf-cache (&optional project-id)
   "Clear cached csrf token(s), optionally only for PROJECT-ID."
   (if project-id
       (maphash
        (lambda (key _value)
-         (when (string-prefix-p (format "%s|%s|" (overleaf--url) project-id) key)
-           (remhash key overleaf--csrf-cache)))
-       overleaf--csrf-cache)
-    (clrhash overleaf--csrf-cache)))
+         (when (string-prefix-p (format "%s|%s|" (overleaf-project--url) project-id) key)
+           (remhash key overleaf-project--csrf-cache)))
+       overleaf-project--csrf-cache)
+    (clrhash overleaf-project--csrf-cache)))
 
 (defun overleaf-project--csrf-token (project-id &optional refresh)
   "Return the csrf token for PROJECT-ID.
 If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
-  (let* ((cookies (overleaf--get-cookies))
+  (let* ((cookies (overleaf-project--get-cookies))
          (cache-key (overleaf-project--csrf-cache-key project-id cookies))
-         (cached (gethash cache-key overleaf--csrf-cache)))
+         (cached (gethash cache-key overleaf-project--csrf-cache)))
     (or (and (not refresh) cached)
         (let* ((project-page
                 (overleaf-project--curl-request
                  "GET"
-                 (overleaf--project-page-url project-id)
+                 (overleaf-project--project-page-url project-id)
                  (overleaf-project--format-curl-headers
                   `(("Cookie" . ,cookies)
-                    ("Origin" . ,(overleaf--url))
-                    ("Referer" . ,(overleaf--project-page-url project-id))))))
+                    ("Origin" . ,(overleaf-project--url))
+                    ("Referer" . ,(overleaf-project--project-page-url project-id))))))
                (token
                 (save-match-data
                   (when (string-match
@@ -82,7 +82,7 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
                     (match-string 1 project-page)))))
           (unless token
             (user-error "Could not extract csrf token for project %s" project-id))
-          (puthash cache-key token overleaf--csrf-cache)
+          (puthash cache-key token overleaf-project--csrf-cache)
           token))))
 
 (defun overleaf-project--curl-403-p (result)
@@ -96,12 +96,12 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 (defun overleaf-project--curl-timeout-args ()
   "Return timeout arguments shared by Overleaf curl commands."
   (append
-   (when overleaf-curl-connect-timeout
+   (when overleaf-project-curl-connect-timeout
      (list "--connect-timeout"
-           (number-to-string overleaf-curl-connect-timeout)))
-   (when overleaf-curl-max-time
+           (number-to-string overleaf-project-curl-connect-timeout)))
+   (when overleaf-project-curl-max-time
      (list "--max-time"
-           (number-to-string overleaf-curl-max-time)))))
+           (number-to-string overleaf-project-curl-max-time)))))
 
 (defun overleaf-project--curl-base-args ()
   "Return common arguments shared by Overleaf curl commands."
@@ -111,14 +111,14 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 
 (defun overleaf-project--socket-cookies ()
   "Return cookies suitable for websocket access."
-  (let* ((cookies (overleaf--get-cookies))
+  (let* ((cookies (overleaf-project--get-cookies))
          (header-text
           (overleaf-project--curl-header-text
            "GET"
-           (format "%s/socket.io/socket.io.js" (overleaf--url))
+           (format "%s/socket.io/socket.io.js" (overleaf-project--url))
            (overleaf-project--format-curl-headers
             `(("Cookie" . ,cookies)
-              ("Origin" . ,(overleaf--url))))))
+              ("Origin" . ,(overleaf-project--url))))))
          (gclb-cookie
           (and header-text
                (save-match-data
@@ -137,7 +137,7 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 
 (defun overleaf-project--curl-download (url output-file headers)
   "Download URL into OUTPUT-FILE with HEADERS using curl."
-  (overleaf-project--run overleaf-curl-executable
+  (overleaf-project--run overleaf-project-curl-executable
                          (overleaf-project--curl-download-args
                           url output-file headers)))
 
@@ -154,7 +154,7 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
             (list "--data-binary" body))
           (list url))))
     (overleaf-project--command-result-output
-     (overleaf-project--run overleaf-curl-executable args))))
+     (overleaf-project--run overleaf-project-curl-executable args))))
 
 (defun overleaf-project--curl-header-text (method url headers &optional body)
   "Run a curl request and return raw response headers as text.
@@ -171,7 +171,7 @@ The response body is discarded."
             (list "--data-binary" body))
           (list url))))
     (overleaf-project--command-result-output
-     (overleaf-project--run overleaf-curl-executable args))))
+     (overleaf-project--run overleaf-project-curl-executable args))))
 
 (defun overleaf-project--curl-upload-file
     (project-id folder-id file-name file-path)
@@ -180,7 +180,7 @@ The response body is discarded."
       ((build-args ()
          (let* ((url
                  (format "%s/project/%s/upload?folder_id=%s"
-                         (overleaf--url)
+                         (overleaf-project--url)
                          project-id
                          folder-id))
                 (headers
@@ -200,21 +200,21 @@ The response body is discarded."
              url)))))
     (let* ((args (build-args))
            (result
-            (overleaf-project--run overleaf-curl-executable args nil nil t)))
+            (overleaf-project--run overleaf-project-curl-executable args nil nil t)))
       (when (overleaf-project--curl-403-p result)
-        (overleaf--warn
+        (overleaf-project--warn
          "Overleaf upload returned 403; refreshing csrf token and retrying once")
         (overleaf-project--clear-csrf-cache project-id)
         (setq args (build-args)
               result
-              (overleaf-project--run overleaf-curl-executable args nil nil t)))
+              (overleaf-project--run overleaf-project-curl-executable args nil nil t)))
       (unless (and (integerp (overleaf-project--command-result-status result))
                    (zerop (overleaf-project--command-result-status result)))
-        (error "%s %s failed: %s"
-               (overleaf-project--ensure-executable overleaf-curl-executable)
-               (string-join args " ")
-               (let ((output (overleaf-project--command-result-output result)))
-                 (if (string-empty-p output) "unknown error" output))))
+        (error "%s"
+               (overleaf-project--command-error-message
+                (overleaf-project--ensure-executable overleaf-project-curl-executable)
+                args
+                (overleaf-project--command-result-output result))))
       (json-parse-string
        (overleaf-project--command-result-output result)
        :object-type 'plist
@@ -227,19 +227,19 @@ The response body is discarded."
          (headers
           (overleaf-project--format-curl-headers
            (overleaf-project--base-headers
-            (overleaf--project-page-url project-id))))
+            (overleaf-project--project-page-url project-id))))
          (url
           (format "%s/project/%s/download/zip"
-                  (overleaf--url)
+                  (overleaf-project--url)
                   project-id)))
     (let ((success nil))
       (unwind-protect
           (prog1
               (progn
-                (overleaf--message "Downloading project %s..." project-id)
+                (overleaf-project--message "Downloading project %s..." project-id)
                 (overleaf-project--curl-download url zipfile headers)
                 (overleaf-project--run
-                 overleaf-unzip-executable
+                 overleaf-project-unzip-executable
                  (list "-q" "-o" zipfile "-d" temp-dir))
                 (make-overleaf-project--snapshot
                  :temp-dir temp-dir
@@ -259,7 +259,7 @@ The response body is discarded."
   (json-parse-string
    (overleaf-project--curl-request
     "POST"
-    (format "%s/project/%s/folder" (overleaf--url) project-id)
+    (format "%s/project/%s/folder" (overleaf-project--url) project-id)
     (overleaf-project--format-curl-headers
      (append
       (overleaf-project--project-headers project-id)
@@ -280,7 +280,7 @@ The response body is discarded."
     (overleaf-project--curl-request
      "DELETE"
      (format "%s/project/%s/%s/%s"
-             (overleaf--url)
+             (overleaf-project--url)
              project-id
              entity-type
              (overleaf-project--entity-id entity))
@@ -294,21 +294,21 @@ The response body is discarded."
 
 (defun overleaf-project-list (&optional url)
   "Return the list of accessible Overleaf projects for URL."
-  (setq overleaf-url (or url (overleaf--url)))
-  (let* ((cookies (overleaf--get-cookies))
+  (setq overleaf-project-url (or url (overleaf-project--url)))
+  (let* ((cookies (overleaf-project--get-cookies))
          (project-page
           (overleaf-project--curl-request
            "GET"
-           (format "%s/project" (overleaf--url))
+           (format "%s/project" (overleaf-project--url))
            (overleaf-project--format-curl-headers
             `(("Cookie" . ,cookies)
-              ("Origin" . ,(overleaf--url))))))
+              ("Origin" . ,(overleaf-project--url))))))
          (projects-json
           (save-match-data
             (unless (string-match
                      "name=\"ol-prefetchedProjectsBlob\".*?content=\"\\(.*?\\)\""
                      project-page)
-              (user-error "Could not find project list on %s" (overleaf--url)))
+              (user-error "Could not find project list on %s" (overleaf-project--url)))
             (json-parse-string
              (url-unhex-string
               (mm-url-decode-entities-string (match-string 1 project-page)))
@@ -328,7 +328,7 @@ The response body is discarded."
                ,(or (plist-get (plist-get project :owner) :email) ""))
               :data ,project))
           projects)))
-    (overleaf--completing-read "Project: " collection)))
+    (overleaf-project--completing-read "Project: " collection)))
 
 (defun overleaf-project--read-project (&optional url)
   "Prompt for an Overleaf project on URL and return its plist."
@@ -343,11 +343,11 @@ The response body is discarded."
           (overleaf-project--curl-request
            "GET"
            (format "%s/socket.io/1/?projectId=%s&esh=1&ssp=1"
-                   (overleaf--url)
+                   (overleaf-project--url)
                    project-id)
            (overleaf-project--format-curl-headers
             `(("Cookie" . ,cookies)
-              ("Origin" . ,(overleaf--url))))))
+              ("Origin" . ,(overleaf-project--url))))))
          (ws-id (car (string-split response-body ":")))
          (ws-url
           (replace-regexp-in-string
@@ -355,7 +355,7 @@ The response body is discarded."
            (replace-regexp-in-string
             "^https" "wss"
             (format "%s/socket.io/1/websocket/%s?projectId=%s&esh=1&ssp=1"
-                    (overleaf--url)
+                    (overleaf-project--url)
                     ws-id
                     project-id))))
          (done nil)
@@ -368,11 +368,11 @@ The response body is discarded."
                 (websocket-open
                  ws-url
                  :custom-header-alist `(("Cookie" . ,cookies)
-                                        ("Origin" . ,(overleaf--url)))
+                                        ("Origin" . ,(overleaf-project--url)))
                  :on-message
                  (lambda (socket frame)
                    (let ((text (websocket-frame-text frame)))
-                     (overleaf--debug "Websocket frame: %s" text)
+                     (overleaf-project--debug "Websocket frame: %s" text)
                      (cond
                       ((string-prefix-p "2::" text)
                        (websocket-send-text socket "2::"))
@@ -393,7 +393,7 @@ The response body is discarded."
                                     (plist-get message :name)
                                     "joinProjectResponse")
                                (setq result
-                                     (overleaf--pget
+                                     (overleaf-project--pget
                                       message :args 0 :project :rootFolder 0)
                                      done t)
                                (ignore-errors (websocket-close socket))))

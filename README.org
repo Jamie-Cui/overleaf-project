@@ -32,19 +32,20 @@ Add the package to your load path and require ~overleaf-project~, or use
 #+begin_src elisp
   (use-package overleaf-project
     :custom
-    (overleaf-url "https://www.overleaf.com"))
+    (overleaf-project-url "https://www.overleaf.com"))
 #+end_src
 
 The package targets Emacs 29.4+ and depends on the Elisp packages
 =websocket= and =webdriver=.
 
-The package feature is named ~overleaf-project~.  Interactive commands
-and customization variables keep the ~overleaf-~ prefix.
+The package feature, interactive commands, and customization variables
+use the ~overleaf-project-~ prefix to avoid colliding with
+~overleaf.el~.
 
 If you use a self-hosted Overleaf instance, set the server URL:
 
 #+begin_src elisp
-  (setopt overleaf-url "https://latex.example.edu")
+  (setopt overleaf-project-url "https://latex.example.edu")
 #+end_src
 
 ** External tools
@@ -82,24 +83,24 @@ You need valid Overleaf session cookies before cloning, pushing, or pulling.
 By default, ~overleaf-project-authenticate~ stores cookies in Emacs auth-source.
 It uses the first plain file entry from ~auth-sources~, falling back to
 =~/.authinfo=.  The package keeps one Overleaf-managed record per host,
-using =login overleaf-project= and =port overleaf-cookie=.  Re-authentication
+using =login overleaf-project= and =port overleaf-project-cookie=.  Re-authentication
 replaces that managed record instead of appending stale copies.
 
 If you prefer a plain file instead, set:
 
 #+begin_src elisp
-  (setopt overleaf-cookie-storage "~/.overleaf-cookies")
+  (setopt overleaf-project-cookie-storage "~/.overleaf-project-cookies")
 #+end_src
 
 If you want cookies to stay only in memory for the current Emacs
 session, set:
 
 #+begin_src elisp
-  (setopt overleaf-cookie-storage nil)
+  (setopt overleaf-project-cookie-storage nil)
 #+end_src
 
-For fully custom setups, you can still set ~overleaf-cookies~ and
-~overleaf-save-cookies~ directly, or use the file helpers
+For fully custom setups, you can still set ~overleaf-project-cookies~ and
+~overleaf-project-save-cookies~ directly, or use the file helpers
 ~overleaf-project-read-cookies-from-file~ and ~overleaf-project-save-cookies-to-file~.
 
 Then run:
@@ -128,7 +129,7 @@ M-x overleaf-project-clone
 
 This command:
 
-- uses the configured ~overleaf-url~ and prompts for the project
+- uses the configured ~overleaf-project-url~ and prompts for the project
 - downloads the full project zip
 - creates a local Git repository
 - commits the imported snapshot
@@ -187,7 +188,7 @@ removed from downloaded snapshots before Git comparisons, so it acts as
 remote sync bookkeeping rather than normal project content.
 
 The package also creates local safety refs under
-~refs/overleaf/backups/~ before sync steps that can move the current
+~refs/overleaf-project/backups/~ before sync steps that can move the current
 branch or complete pending sync state.  These refs keep previous local
 commits reachable independently of branch movement and reflog expiry.
 
@@ -290,9 +291,12 @@ If you want an Overleaf section inside =magit-status=, load the optional
 #+end_src
 
 For Overleaf-managed repositories, each =magit-status= refresh then also
-starts an asynchronous refresh of the remote Overleaf snapshot.  When
-the download finishes, the status buffer refreshes again and shows the
-remote diff against the last synced base snapshot.
+may start an asynchronous refresh of the remote Overleaf snapshot.  The
+automatic refresh is throttled by
+=overleaf-project-magit-auto-refresh-remote-interval= so ordinary Magit
+refreshes do not repeatedly download snapshots and trigger Overleaf rate
+limits.  When the download finishes, the status buffer refreshes again
+and shows the remote diff against the last synced base snapshot.
 
 If you prefer to keep remote refresh manual, set
 =overleaf-project-magit-auto-refresh-remote= to =nil=.  You can still
@@ -309,6 +313,8 @@ The main interactive commands are:
 - ~overleaf-project-overwrite-remote~
 - ~overleaf-project-pull~
 - ~overleaf-project-browse-remote~
+- ~overleaf-project-log~
+- ~overleaf-project-log-clear~
 
 You can also bind the provided command map:
 
@@ -329,12 +335,18 @@ The default bindings inside that map are:
 
 Useful options include:
 
-- ~overleaf-url~ for the Overleaf server URL
-- ~overleaf-cache-cookies~ to force cookie reloads instead of caching
-- ~overleaf-debug~ for verbose logging
+- ~overleaf-project-url~ for the Overleaf server URL
+- ~overleaf-project-cache-cookies~ to force cookie reloads instead of caching
+- ~overleaf-project-debug~ for verbose logging
+- ~overleaf-project-log-buffer-name~ for the global log buffer name
+- ~overleaf-project-log-echo~ to control whether log entries also appear in
+  the minibuffer
+- ~overleaf-project-log-time-format~ to customize log entry timestamps
 - ~overleaf-project-sync-auto-commit-message~ for the automatic local checkpoint commit before pushing
 - ~overleaf-project-async-commands~ to keep interactive commands and
   push hooks from blocking Emacs during network, unzip, and Git work
+- ~overleaf-project-magit-auto-refresh-remote-interval~ to throttle
+  automatic Magit remote snapshot downloads
 - ~overleaf-project-sync-metadata-enabled~ to control whether push writes
   remote sync metadata
 - ~overleaf-project-sync-metadata-file~ to rename the reserved remote
@@ -344,13 +356,17 @@ Useful options include:
 - ~overleaf-project-local-backup-ref-prefix~ to choose the backup ref
   namespace
 - ~overleaf-project-socket-timeout~ if project tree websocket fetches need longer
-- ~overleaf-curl-connect-timeout~ and ~overleaf-curl-max-time~ to cap
+- ~overleaf-project-curl-connect-timeout~ and ~overleaf-project-curl-max-time~ to cap
   curl calls during Overleaf HTTP requests
-- ~overleaf-git-executable~, ~overleaf-curl-executable~ and
-  ~overleaf-unzip-executable~ if the tools are not on your =PATH=
+- ~overleaf-project-git-executable~, ~overleaf-project-curl-executable~ and
+  ~overleaf-project-unzip-executable~ if the tools are not on your =PATH=
 
 * Notes
 
+- Overleaf messages, warnings, and debug entries are written to the
+  global ~*overleaf-project-log*~ buffer.  Each entry includes timestamp,
+  level, and the best available project, repository, or Overleaf URL
+  context so logs from different projects can be distinguished.
 - Push currently recreates changed remote files instead of preserving old
   Overleaf document ids.  That is acceptable for the new project-level
   workflow, but it is different from the old live buffer integration.
@@ -362,14 +378,14 @@ Useful options include:
 - Local safety refs can be inspected with:
 
   #+begin_example
-  git show-ref refs/overleaf/backups
+  git show-ref refs/overleaf-project/backups
   #+end_example
 
   To recover one, create a normal branch from the backup ref:
 
   #+begin_example
-  git branch recover-overleaf refs/overleaf/backups/...
+  git branch recover-overleaf refs/overleaf-project/backups/...
   #+end_example
 - Empty directories are not tracked by Git and therefore are not
   preserved by push/pull.
-- Verbose logging can be enabled by setting ~overleaf-debug~ to ~t~.
+- Verbose debug entries can be enabled by setting ~overleaf-project-debug~ to ~t~.

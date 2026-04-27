@@ -12,6 +12,7 @@
 
 (require 'auth-source)
 (require 'cl-lib)
+(require 'overleaf-project-log)
 (require 'subr-x)
 (require 'url-parse)
 
@@ -19,12 +20,7 @@
 
 ;;;; Variables
 
-(defgroup overleaf nil
-  "Clone, push, and pull full Overleaf projects."
-  :prefix "overleaf-"
-  :group 'tools)
-
-(defcustom overleaf-cookie-storage 'authinfo
+(defcustom overleaf-project-cookie-storage 'authinfo
   "Where Overleaf cookies should be persisted across Emacs sessions.
 
 If the value is the symbol `authinfo', cookies are stored in the first
@@ -39,9 +35,10 @@ current Emacs session."
   :type '(choice
           (const :tag "Emacs auth-source file" authinfo)
           (file :tag "Plain file")
-          (const :tag "Session only" nil)))
+          (const :tag "Session only" nil))
+  :group 'overleaf-project)
 
-(defcustom overleaf-cookies #'overleaf--load-configured-cookies
+(defcustom overleaf-project-cookies #'overleaf-project--load-configured-cookies
   "The Overleaf session cookies.
 
 Can either be:
@@ -50,54 +47,59 @@ Can either be:
 - a string containing either that serialized alist or a raw Cookie header
 - a function returning one of those values
 
-The default value follows `overleaf-cookie-storage'.  Override this
+The default value follows `overleaf-project-cookie-storage'.  Override this
 variable directly only when you want to supply cookies manually or use a
 custom loader.
 
 The cookies are usually obtained and refreshed via
 `overleaf-project-authenticate'."
-  :type '(choice sexp string function))
+  :type '(choice sexp string function)
+  :group 'overleaf-project)
 
 
-(defcustom overleaf-url "https://www.overleaf.com"
+(defcustom overleaf-project-url "https://www.overleaf.com"
   "The URL of the Overleaf server."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
-(defcustom overleaf-cache-cookies t
+(defcustom overleaf-project-cache-cookies t
   "Whether to cache the cookies after obtaining them."
-  :type 'boolean)
+  :type 'boolean
+  :group 'overleaf-project)
 
-(defcustom overleaf-debug nil
-  "Whether to emit verbose debug messages."
-  :type 'boolean)
-
-(defcustom overleaf-git-executable "git"
+(defcustom overleaf-project-git-executable "git"
   "Git executable used for project operations."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
-(defcustom overleaf-curl-executable "curl"
+(defcustom overleaf-project-curl-executable "curl"
   "Curl executable used for project download and upload."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
-(defcustom overleaf-curl-connect-timeout 10
+(defcustom overleaf-project-curl-connect-timeout 10
   "Seconds to wait while establishing Overleaf curl connections.
 Set this to nil to let curl use its default connection timeout."
   :type '(choice (integer :tag "Seconds")
-                 (const :tag "Use curl default" nil)))
+                 (const :tag "Use curl default" nil))
+  :group 'overleaf-project)
 
-(defcustom overleaf-curl-max-time 45
+(defcustom overleaf-project-curl-max-time 45
   "Maximum seconds to allow one Overleaf curl request to run.
 Set this to nil to let curl run without a package-level request timeout."
   :type '(choice (integer :tag "Seconds")
-                 (const :tag "No package timeout" nil)))
+                 (const :tag "No package timeout" nil))
+  :group 'overleaf-project)
 
-(defcustom overleaf-unzip-executable "unzip"
+(defcustom overleaf-project-unzip-executable "unzip"
   "Unzip executable used to unpack downloaded projects."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
-(defcustom overleaf-project-base-ref "refs/overleaf/base"
+(defcustom overleaf-project-base-ref "refs/overleaf-project/base"
   "Git ref that stores the last successfully synchronized snapshot."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
 (defcustom overleaf-project-sync-metadata-enabled t
   "Whether to maintain a remote Overleaf sync metadata file.
@@ -106,7 +108,8 @@ When enabled, push commands upload `overleaf-project-sync-metadata-file'
 to the Overleaf project root.  Downloaded snapshots read and remove that
 file before Git comparisons, so it acts as remote bookkeeping rather
 than project content."
-  :type 'boolean)
+  :type 'boolean
+  :group 'overleaf-project)
 
 (defcustom overleaf-project-sync-metadata-file ".overleaf-project-sync.json"
   "Root-level Overleaf file used to remember the last uploaded Git commit.
@@ -114,7 +117,8 @@ than project content."
 This file name is reserved by `overleaf-project' when
 `overleaf-project-sync-metadata-enabled' is non-nil.  It is stored on the
 Overleaf remote, but should not be tracked by the local Git repository."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
 (defcustom overleaf-project-local-backups-enabled t
   "Whether to create local backup refs before mutating Overleaf sync steps.
@@ -124,20 +128,24 @@ pending sync first create refs under
 `overleaf-project-local-backup-ref-prefix'.  These refs keep the previous
 local commits reachable even if a later merge, fast-forward, or branch
 update does not produce the expected result."
-  :type 'boolean)
+  :type 'boolean
+  :group 'overleaf-project)
 
-(defcustom overleaf-project-local-backup-ref-prefix "refs/overleaf/backups"
+(defcustom overleaf-project-local-backup-ref-prefix "refs/overleaf-project/backups"
   "Git ref namespace used for local Overleaf safety backups."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
 (defcustom overleaf-project-socket-timeout 15
   "Seconds to wait for the Overleaf project tree websocket response."
-  :type 'integer)
+  :type 'integer
+  :group 'overleaf-project)
 
 (defcustom overleaf-project-sync-auto-commit-message
   "chore: checkpoint before Overleaf push"
   "Commit message used when `overleaf-project-push' auto-commits changes."
-  :type 'string)
+  :type 'string
+  :group 'overleaf-project)
 
 (defcustom overleaf-project-async-commands t
   "Whether interactive Overleaf commands run long operations in the background.
@@ -148,30 +156,32 @@ user input in the foreground, then run network, unzip, and Git work on a
 background Emacs thread.  Lisp callers that invoke these commands
 noninteractively keep the synchronous behavior unless documented
 otherwise."
-  :type 'boolean)
+  :type 'boolean
+  :group 'overleaf-project)
 
-(defcustom overleaf-auth-session-cookie-regexp
+(defcustom overleaf-project-auth-session-cookie-regexp
   "\\`\\(?:overleaf_session[[:alnum:]_]*\\|sharelatex_session[[:alnum:]_]*\\|sharelatex\\.sid\\|connect\\.sid\\|sessionid\\|session\\)\\'"
   "Regexp matching cookie names that represent the authenticated session.
 
 This is used only for local expiry checks after `overleaf-project-authenticate'.
 Short-lived analytics or load-balancer cookies are intentionally ignored,
 because their expiry is often much earlier than the actual login session."
-  :type 'regexp)
+  :type 'regexp
+  :group 'overleaf-project)
 
-(defvar overleaf-save-cookies #'overleaf--save-configured-cookies
+(defvar overleaf-project-save-cookies #'overleaf-project--save-configured-cookies
   "Function storing a freshly authenticated cookie string.
 
 The function receives a string containing the session cookies and stores
-them in a way that `overleaf-cookies' can later access.
+them in a way that `overleaf-project-cookies' can later access.
 
-The default implementation follows `overleaf-cookie-storage'.  Override
+The default implementation follows `overleaf-project-cookie-storage'.  Override
 this variable directly only when you want custom persistence logic.")
 
-(defvar overleaf--current-cookies nil
-  "Cached cookie alist returned from `overleaf-cookies'.")
+(defvar overleaf-project--current-cookies nil
+  "Cached cookie alist returned from `overleaf-project-cookies'.")
 
-(defvar overleaf--csrf-cache (make-hash-table :test #'equal)
+(defvar overleaf-project--csrf-cache (make-hash-table :test #'equal)
   "Cache of csrf tokens keyed by \"URL|PROJECT-ID\".")
 
 (defvar overleaf-project--remote-sync-metadata nil
@@ -212,25 +222,8 @@ this variable directly only when you want custom persistence logic.")
   on-success
   on-error
   default-directory
-  overleaf-url)
-
-;;;; Logging
-
-(defun overleaf--message (format-string &rest args)
-  "Log an Overleaf message using FORMAT-STRING and ARGS."
-  (apply #'message (concat "[overleaf] " format-string) args))
-
-(defun overleaf--warn (format-string &rest args)
-  "Display an Overleaf warning using FORMAT-STRING and ARGS."
-  (display-warning
-   'overleaf-project
-   (apply #'format format-string args)
-   :warning))
-
-(defun overleaf--debug (format-string &rest args)
-  "Log a debug message using FORMAT-STRING and ARGS."
-  (when overleaf-debug
-    (apply #'overleaf--message (concat "DEBUG: " format-string) args)))
+  overleaf-project-url
+  log-context)
 
 ;;;; Async helpers
 
@@ -294,13 +287,13 @@ this variable directly only when you want custom persistence logic.")
 (defun overleaf-project--async-push-completion (completion)
   "Queue COMPLETION for foreground handling."
   (overleaf-project--with-async-mutex
-    (push completion overleaf-project--async-completions)))
+   (push completion overleaf-project--async-completions)))
 
 (defun overleaf-project--async-pop-completions ()
   "Return queued async completions in completion order."
   (overleaf-project--with-async-mutex
-    (prog1 (nreverse overleaf-project--async-completions)
-      (setq overleaf-project--async-completions nil))))
+   (prog1 (nreverse overleaf-project--async-completions)
+     (setq overleaf-project--async-completions nil))))
 
 (defun overleaf-project--async-drain-completions ()
   "Run foreground callbacks for completed async operations."
@@ -309,11 +302,14 @@ this variable directly only when you want custom persistence logic.")
       (when key
         (remhash key overleaf-project--async-locks)))
     (let ((default-directory
-            (or (overleaf-project--async-completion-default-directory completion)
-                default-directory))
-          (overleaf-url
-           (or (overleaf-project--async-completion-overleaf-url completion)
-               overleaf-url)))
+           (or (overleaf-project--async-completion-default-directory completion)
+               default-directory))
+          (overleaf-project-url
+           (or (overleaf-project--async-completion-overleaf-project-url completion)
+               overleaf-project-url))
+          (overleaf-project-log-context
+           (or (overleaf-project--async-completion-log-context completion)
+               overleaf-project-log-context)))
       (condition-case err
           (pcase (overleaf-project--async-completion-status completion)
             ('success
@@ -321,22 +317,22 @@ this variable directly only when you want custom persistence logic.")
                        (overleaf-project--async-completion-on-success completion)))
                  (funcall callback
                           (overleaf-project--async-completion-value completion))
-               (overleaf--message "Finished %s"
-                                  (overleaf-project--async-completion-name
-                                   completion))))
+               (overleaf-project--message "Finished %s"
+					  (overleaf-project--async-completion-name
+					   completion))))
             ('error
              (let ((message
                     (overleaf-project--async-completion-error completion)))
                (if-let ((callback
                          (overleaf-project--async-completion-on-error completion)))
                    (funcall callback message)
-                 (overleaf--warn "%s failed: %s"
-                                 (overleaf-project--async-completion-name completion)
-                                 message)))))
+                 (overleaf-project--warn "%s failed: %s"
+					 (overleaf-project--async-completion-name completion)
+					 message)))))
         (error
-         (overleaf--warn "%s callback failed: %s"
-                         (overleaf-project--async-completion-name completion)
-                         (error-message-string err))))))
+         (overleaf-project--warn "%s callback failed: %s"
+				 (overleaf-project--async-completion-name completion)
+				 (error-message-string err))))))
   (overleaf-project--async-stop-timer-if-idle))
 
 (cl-defun overleaf-project--async-start
@@ -363,17 +359,19 @@ ON-ERROR receives an error message string in the foreground."
     (when key
       (puthash key name overleaf-project--async-locks))
     (let ((captured-default-directory default-directory)
-          (captured-overleaf-url overleaf-url)
-          (captured-current-cookies overleaf--current-cookies)
+          (captured-overleaf-project-url overleaf-project-url)
+          (captured-current-cookies overleaf-project--current-cookies)
+          (captured-log-context (overleaf-project-log-current-context))
           (captured-process-environment process-environment))
       (overleaf-project--async-ensure-timer)
       (unless quiet
-        (overleaf--message "Started %s in background" name))
+        (overleaf-project--message "Started %s in background" name))
       (make-thread
        (lambda ()
          (let ((default-directory captured-default-directory)
-               (overleaf-url captured-overleaf-url)
-               (overleaf--current-cookies captured-current-cookies)
+               (overleaf-project-url captured-overleaf-project-url)
+               (overleaf-project--current-cookies captured-current-cookies)
+               (overleaf-project-log-context captured-log-context)
                (process-environment captured-process-environment))
            (condition-case err
                (overleaf-project--async-push-completion
@@ -385,7 +383,8 @@ ON-ERROR receives an error message string in the foreground."
                  :on-success on-success
                  :on-error on-error
                  :default-directory captured-default-directory
-                 :overleaf-url captured-overleaf-url))
+                 :overleaf-project-url captured-overleaf-project-url
+                 :log-context captured-log-context))
              (error
               (overleaf-project--async-push-completion
                (make-overleaf-project--async-completion
@@ -396,24 +395,25 @@ ON-ERROR receives an error message string in the foreground."
                 :on-success on-success
                 :on-error on-error
                 :default-directory captured-default-directory
-                :overleaf-url captured-overleaf-url))))))
+                :overleaf-project-url captured-overleaf-project-url
+                :log-context captured-log-context))))))
        name))))
 
 ;;;; Cookie helpers
 
-(defconst overleaf--authinfo-default-source "~/.authinfo"
+(defconst overleaf-project--authinfo-default-source "~/.authinfo"
   "Fallback authinfo file used by Overleaf cookie helpers.")
 
-(defconst overleaf--authinfo-default-user "overleaf-project"
+(defconst overleaf-project--authinfo-default-user "overleaf-project"
   "Default authinfo login used for Overleaf cookie helpers.")
 
-(defconst overleaf--authinfo-default-port "overleaf-cookie"
+(defconst overleaf-project--authinfo-default-port "overleaf-project-cookie"
   "Default authinfo port used for Overleaf cookie helpers.")
 
-(defconst overleaf--authinfo-record-marker "overleaf-cookie-record"
+(defconst overleaf-project--authinfo-record-marker "overleaf-project-cookie-record"
   "Marker key used for authinfo entries managed by this package.")
 
-(defun overleaf--authinfo-source-file (&optional source)
+(defun overleaf-project--authinfo-source-file (&optional source)
   "Return the expanded authinfo SOURCE file path."
   (expand-file-name
    (or source
@@ -423,86 +423,86 @@ ON-ERROR receives an error message string in the foreground."
                (not (string-match-p "\\.gpg\\'" entry))
                entry))
         auth-sources)
-       overleaf--authinfo-default-source)))
+       overleaf-project--authinfo-default-source)))
 
-(defun overleaf--authinfo-resolve-host (&optional host)
+(defun overleaf-project--authinfo-resolve-host (&optional host)
   "Return the authinfo host key for HOST or the current Overleaf host."
-  (downcase (or host (overleaf--url-host))))
+  (downcase (or host (overleaf-project--url-host))))
 
-(defun overleaf--authinfo-resolve-user (&optional user)
+(defun overleaf-project--authinfo-resolve-user (&optional user)
   "Return the authinfo login key for USER."
-  (or user overleaf--authinfo-default-user))
+  (or user overleaf-project--authinfo-default-user))
 
-(defun overleaf--authinfo-resolve-port (&optional port)
+(defun overleaf-project--authinfo-resolve-port (&optional port)
   "Return the authinfo port key for PORT."
-  (or port overleaf--authinfo-default-port))
+  (or port overleaf-project--authinfo-default-port))
 
-(defun overleaf--authinfo-format-value (value)
+(defun overleaf-project--authinfo-format-value (value)
   "Return VALUE formatted as one authinfo token."
   (if (string-match-p "[[:space:]\"#]" value)
       (format "%S" value)
     value))
 
-(defun overleaf--authinfo-format-field (name value)
+(defun overleaf-project--authinfo-format-field (name value)
   "Return one authinfo field string for NAME and VALUE."
-  (format "%s %s" name (overleaf--authinfo-format-value value)))
+  (format "%s %s" name (overleaf-project--authinfo-format-value value)))
 
-(defun overleaf--authinfo-encode-secret (secret)
+(defun overleaf-project--authinfo-encode-secret (secret)
   "Encode serialized cookie SECRET for authinfo storage."
   (base64-encode-string secret t))
 
-(defun overleaf--authinfo-decode-secret (secret)
+(defun overleaf-project--authinfo-decode-secret (secret)
   "Decode serialized cookie SECRET loaded from authinfo."
   (condition-case nil
       (base64-decode-string secret)
     (error secret)))
 
-(defun overleaf--authinfo-entry-line (host user port secret)
+(defun overleaf-project--authinfo-entry-line (host user port secret)
   "Return one authinfo line storing SECRET for HOST, USER, and PORT."
   (string-join
-   (list (overleaf--authinfo-format-field "machine" host)
-         (overleaf--authinfo-format-field "login" user)
-         (overleaf--authinfo-format-field "port" port)
-         (overleaf--authinfo-format-field
+   (list (overleaf-project--authinfo-format-field "machine" host)
+         (overleaf-project--authinfo-format-field "login" user)
+         (overleaf-project--authinfo-format-field "port" port)
+         (overleaf-project--authinfo-format-field
           "password"
-          (overleaf--authinfo-encode-secret secret))
-         (overleaf--authinfo-format-field overleaf--authinfo-record-marker "t"))
+          (overleaf-project--authinfo-encode-secret secret))
+         (overleaf-project--authinfo-format-field overleaf-project--authinfo-record-marker "t"))
    " "))
 
-(defun overleaf--authinfo-entry-regexp (host user port)
+(defun overleaf-project--authinfo-entry-regexp (host user port)
   "Return a regexp matching a managed authinfo entry."
   (format "^machine %s login %s port %s password .* %s t$"
-          (regexp-quote (overleaf--authinfo-format-value host))
-          (regexp-quote (overleaf--authinfo-format-value user))
-          (regexp-quote (overleaf--authinfo-format-value port))
-          (regexp-quote overleaf--authinfo-record-marker)))
+          (regexp-quote (overleaf-project--authinfo-format-value host))
+          (regexp-quote (overleaf-project--authinfo-format-value user))
+          (regexp-quote (overleaf-project--authinfo-format-value port))
+          (regexp-quote overleaf-project--authinfo-record-marker)))
 
-(defun overleaf--authinfo-read-secret (source host user port)
+(defun overleaf-project--authinfo-read-secret (source host user port)
   "Read the Overleaf cookie secret from authinfo SOURCE."
-  (let ((file (overleaf--authinfo-source-file source)))
+  (let ((file (overleaf-project--authinfo-source-file source)))
     (when (file-readable-p file)
       (let* ((auth-sources (list file))
              (entry (car (auth-source-search
                           :max 1
-                          :host (overleaf--authinfo-resolve-host host)
-                          :user (overleaf--authinfo-resolve-user user)
-                          :port (overleaf--authinfo-resolve-port port)
+                          :host (overleaf-project--authinfo-resolve-host host)
+                          :user (overleaf-project--authinfo-resolve-user user)
+                          :port (overleaf-project--authinfo-resolve-port port)
                           :require '(:secret)))))
         (when entry
-          (overleaf--authinfo-decode-secret
+          (overleaf-project--authinfo-decode-secret
            (auth-info-password entry)))))))
 
-(defun overleaf--authinfo-write-secret (source host user port secret)
+(defun overleaf-project--authinfo-write-secret (source host user port secret)
   "Write SECRET to authinfo SOURCE for HOST, USER, and PORT."
-  (let* ((file (overleaf--authinfo-source-file source))
-         (resolved-host (overleaf--authinfo-resolve-host host))
-         (resolved-user (overleaf--authinfo-resolve-user user))
-         (resolved-port (overleaf--authinfo-resolve-port port))
-         (regexp (overleaf--authinfo-entry-regexp
+  (let* ((file (overleaf-project--authinfo-source-file source))
+         (resolved-host (overleaf-project--authinfo-resolve-host host))
+         (resolved-user (overleaf-project--authinfo-resolve-user user))
+         (resolved-port (overleaf-project--authinfo-resolve-port port))
+         (regexp (overleaf-project--authinfo-entry-regexp
                   resolved-host
                   resolved-user
                   resolved-port))
-         (line (overleaf--authinfo-entry-line
+         (line (overleaf-project--authinfo-entry-line
                 resolved-host
                 resolved-user
                 resolved-port
@@ -520,34 +520,34 @@ ON-ERROR receives an error message string in the foreground."
     (set-file-modes file #o600)
     (auth-source-forget+ :host resolved-host :user resolved-user :port resolved-port)))
 
-(defun overleaf--load-configured-cookies ()
-  "Load cookies according to `overleaf-cookie-storage'."
-  (pcase overleaf-cookie-storage
+(defun overleaf-project--load-configured-cookies ()
+  "Load cookies according to `overleaf-project-cookie-storage'."
+  (pcase overleaf-project-cookie-storage
     ('authinfo
-     (overleaf--authinfo-read-secret nil nil nil nil))
+     (overleaf-project--authinfo-read-secret nil nil nil nil))
     ((pred stringp)
-     (funcall (overleaf-project-read-cookies-from-file overleaf-cookie-storage)))
+     (funcall (overleaf-project-read-cookies-from-file overleaf-project-cookie-storage)))
     (_ nil)))
 
-(defun overleaf--save-configured-cookies (cookies)
-  "Persist COOKIES according to `overleaf-cookie-storage'."
-  (pcase overleaf-cookie-storage
+(defun overleaf-project--save-configured-cookies (cookies)
+  "Persist COOKIES according to `overleaf-project-cookie-storage'."
+  (pcase overleaf-project-cookie-storage
     ('authinfo
-     (overleaf--authinfo-write-secret nil nil nil nil cookies))
+     (overleaf-project--authinfo-write-secret nil nil nil nil cookies))
     ((pred stringp)
-     (funcall (overleaf-project-save-cookies-to-file overleaf-cookie-storage) cookies))
+     (funcall (overleaf-project-save-cookies-to-file overleaf-project-cookie-storage) cookies))
     (_ nil)))
 
 ;;;###autoload
 (defun overleaf-project-read-cookies-from-file (file)
   "Return a cookie loader function reading cookies from FILE.
-To be used with `overleaf-cookies'."
+To be used with `overleaf-project-cookies'."
   (lambda ()
     (with-temp-buffer
       (insert-file-contents (expand-file-name file))
       (read (string-trim (buffer-string))))))
 
-(defun overleaf--normalize-cookie-entry (entry)
+(defun overleaf-project--normalize-cookie-entry (entry)
   "Normalize one cookie ENTRY into `(DOMAIN COOKIE-STRING EXPIRY)'."
   (pcase entry
     (`(,domain ,cookie-string ,expiry)
@@ -563,7 +563,7 @@ To be used with `overleaf-cookies'."
     (_
      (error "Invalid Overleaf cookie entry: %S" entry))))
 
-(defun overleaf--normalize-full-cookies (cookies)
+(defun overleaf-project--normalize-full-cookies (cookies)
   "Return a normalized cookie alist from COOKIES."
   (cond
    ((null cookies) nil)
@@ -573,58 +573,58 @@ To be used with `overleaf-cookies'."
        ((string-empty-p trimmed) nil)
        ((string-prefix-p "(" trimmed)
         (condition-case err
-            (overleaf--normalize-full-cookies
+            (overleaf-project--normalize-full-cookies
              (car (read-from-string trimmed)))
           (error
            (error "Could not parse serialized Overleaf cookies: %s"
                   (error-message-string err)))))
        (t
-        (list (list (overleaf--cookie-domain) trimmed nil))))))
+        (list (list (overleaf-project--cookie-domain) trimmed nil))))))
    ((listp cookies)
-    (mapcar #'overleaf--normalize-cookie-entry cookies))
+    (mapcar #'overleaf-project--normalize-cookie-entry cookies))
    (t
-    (error "Unsupported value for `overleaf-cookies': %S" cookies))))
+    (error "Unsupported value for `overleaf-project-cookies': %S" cookies))))
 
 ;;;###autoload
 (defun overleaf-project-save-cookies-to-file (file)
   "Return a cookie saver function writing cookies to FILE.
-To be used with `overleaf-save-cookies'."
+To be used with `overleaf-project-save-cookies'."
   (lambda (cookies)
     (with-temp-file (expand-file-name file)
       (insert cookies))))
 
-(defun overleaf--get-full-cookies ()
+(defun overleaf-project--get-full-cookies ()
   "Load the association list mapping domains to cookies."
-  (if (and overleaf--current-cookies overleaf-cache-cookies)
-      overleaf--current-cookies
+  (if (and overleaf-project--current-cookies overleaf-project-cache-cookies)
+      overleaf-project--current-cookies
     (condition-case err
-        (setq overleaf--current-cookies
-              (overleaf--normalize-full-cookies
-               (if (functionp overleaf-cookies)
-                   (funcall overleaf-cookies)
-                 overleaf-cookies)))
+        (setq overleaf-project--current-cookies
+              (overleaf-project--normalize-full-cookies
+               (if (functionp overleaf-project-cookies)
+                   (funcall overleaf-project-cookies)
+                 overleaf-project-cookies)))
       (error
-       (overleaf--warn "Error while loading cookies: %s"
-                       (error-message-string err))
+       (overleaf-project--warn "Error while loading cookies: %s"
+			       (error-message-string err))
        nil))))
 
-(defun overleaf--get-cookies ()
-  "Load cookies from `overleaf-cookies'."
-  (let ((state (overleaf--cookie-state)))
+(defun overleaf-project--get-cookies ()
+  "Load cookies from `overleaf-project-cookies'."
+  (let ((state (overleaf-project--cookie-state)))
     (pcase (plist-get state :status)
       ('valid
        (plist-get state :value))
       ('expired
        (user-error
         "Cookies for %s are expired. Refresh them with `overleaf-project-authenticate' or manually"
-        (overleaf--url-host)))
+        (overleaf-project--url-host)))
       (_
        (user-error
         "Cookies for %s are not set. Configure them with `overleaf-project-authenticate' or manually"
-        (overleaf--url-host))))))
+        (overleaf-project--url-host))))))
 
-(defun overleaf--cookie-state ()
-  "Return the local cookie state for the current `overleaf-url'.
+(defun overleaf-project--cookie-state ()
+  "Return the local cookie state for the current `overleaf-project-url'.
 The result is a plist with `:status' set to one of `valid',
 `missing', or `expired'.  For `valid', `:value' contains the cookie
 header string.  This only inspects locally available cookie data and
@@ -634,37 +634,41 @@ does not contact the Overleaf server."
            (lambda (domain)
              (alist-get
               domain
-              (overleaf--get-full-cookies)
+              (overleaf-project--get-full-cookies)
               nil
               nil
               #'string=))
-           (overleaf--cookie-key-candidates)))
+           (overleaf-project--cookie-key-candidates)))
          (now (time-convert nil 'integer)))
     (if entry
         (pcase-let ((`(,value ,validity) entry))
           (if (or (not validity) (< now validity))
               `(:status valid :value ,value :validity ,validity)
-            (setq overleaf--current-cookies nil)
+            (setq overleaf-project--current-cookies nil)
             `(:status expired :validity ,validity)))
-      (setq overleaf--current-cookies nil)
+      (setq overleaf-project--current-cookies nil)
       '(:status missing))))
 
-(defun overleaf--ensure-authenticated (&optional action)
-  "Ensure the current `overleaf-url' has usable cookies before ACTION.
+(defun overleaf-project--authentication-needed-reason (&optional state)
+  "Return a user-facing reason when cookie STATE is not valid."
+  (let* ((host (overleaf-project--url-host))
+         (status (plist-get (or state (overleaf-project--cookie-state)) :status)))
+    (pcase status
+      ('expired
+       (format
+        "Cookies for %s are expired according to the locally saved expiry time."
+        host))
+      ('missing
+       (format "Cookies for %s are not set locally." host))
+      (_ nil))))
+
+(defun overleaf-project--ensure-authenticated (&optional action)
+  "Ensure the current `overleaf-project-url' has usable cookies before ACTION.
 If cookies are missing or expired, ask in the minibuffer whether to run
 `overleaf-project-authenticate' immediately."
-  (let* ((host (overleaf--url-host))
-         (state (overleaf--cookie-state))
+  (let* ((state (overleaf-project--cookie-state))
          (status (plist-get state :status))
-         (reason
-          (pcase status
-            ('expired
-             (format
-              "Cookies for %s are expired according to the locally saved expiry time."
-              host))
-            ('missing
-             (format "Cookies for %s are not set locally." host))
-            (_ nil))))
+         (reason (overleaf-project--authentication-needed-reason state)))
     (if (eq status 'valid)
         t
       (if (or noninteractive
@@ -677,13 +681,13 @@ If cookies are missing or expired, ask in the minibuffer whether to run
            "%s Run `overleaf-project-authenticate` before %s"
            reason
            (or action "continuing"))
-        (overleaf-project-authenticate overleaf-url)
-        (overleaf--get-cookies)
+        (overleaf-project-authenticate overleaf-project-url)
+        (overleaf-project--get-cookies)
         t))))
 
 ;;;; Generic helpers
 
-(defun overleaf--pget (plist &rest keys)
+(defun overleaf-project--pget (plist &rest keys)
   "Recursively follow KEYS inside PLIST."
   (while keys
     (let ((key (pop keys)))
@@ -693,7 +697,7 @@ If cookies are missing or expired, ask in the minibuffer whether to run
               (plist-get plist key)))))
   plist)
 
-(defun overleaf--completing-read (prompt collection &optional padding)
+(defun overleaf-project--completing-read (prompt collection &optional padding)
   "Perform a completing read with PROMPT over COLLECTION.
 
 COLLECTION is a list of plists with the shape
@@ -726,24 +730,24 @@ COLLECTION is a list of plists with the shape
       (completing-read prompt final-collection nil t)
       final-collection))))
 
-(defun overleaf--url ()
+(defun overleaf-project--url ()
   "Return a sanitized Overleaf URL without a trailing slash."
-  (string-trim (string-trim overleaf-url) "" "/"))
+  (string-trim (string-trim overleaf-project-url) "" "/"))
 
-(defun overleaf--url-host ()
-  "Return the normalized host part of `overleaf-url'."
-  (let ((host (url-host (url-generic-parse-url (overleaf--url)))))
+(defun overleaf-project--url-host ()
+  "Return the normalized host part of `overleaf-project-url'."
+  (let ((host (url-host (url-generic-parse-url (overleaf-project--url)))))
     (unless host
-      (user-error "Invalid Overleaf URL: %s" (overleaf--url)))
+      (user-error "Invalid Overleaf URL: %s" (overleaf-project--url)))
     (downcase host)))
 
-(defun overleaf--cookie-domain ()
-  "Return the cookie domain for the current `overleaf-url'."
-  (overleaf--url-host))
+(defun overleaf-project--cookie-domain ()
+  "Return the cookie domain for the current `overleaf-project-url'."
+  (overleaf-project--url-host))
 
-(defun overleaf--cookie-key-candidates ()
-  "Return candidate cookie keys for the current `overleaf-url'."
-  (let* ((host (overleaf--url-host))
+(defun overleaf-project--cookie-key-candidates ()
+  "Return candidate cookie keys for the current `overleaf-project-url'."
+  (let* ((host (overleaf-project--url-host))
          (labels (string-split host "\\."))
          (candidates (list host (concat "." host))))
     ;; Keep parent-domain lookups for older saved cookie formats.
@@ -754,9 +758,9 @@ COLLECTION is a list of plists with the shape
               (append candidates (list suffix (concat "." suffix))))))
     (delete-dups candidates)))
 
-(defun overleaf--project-page-url (project-id)
+(defun overleaf-project--project-page-url (project-id)
   "Return the project page URL for PROJECT-ID."
-  (format "%s/project/%s" (overleaf--url) project-id))
+  (format "%s/project/%s" (overleaf-project--url) project-id))
 
 (defun overleaf-project--sanitize-name (name)
   "Turn NAME into a filesystem-friendly directory name."
@@ -774,6 +778,65 @@ COLLECTION is a list of plists with the shape
   "Return PROGRAM if it is executable, otherwise signal an error."
   (or (executable-find program)
       (user-error "Required executable `%s' was not found" program)))
+
+(defconst overleaf-project--sensitive-header-regexp
+  "\\`\\(?:Cookie\\|Authorization\\|X-Csrf-Token\\):[[:space:]]*"
+  "Regexp matching command header arguments that should not be logged.")
+
+(defun overleaf-project--redact-sensitive-argument (arg)
+  "Return ARG with sensitive command data redacted."
+  (if (and (stringp arg)
+           (string-match overleaf-project--sensitive-header-regexp arg))
+      (concat (match-string 0 arg) "<redacted>")
+    arg))
+
+(defun overleaf-project--redact-command-args (args)
+  "Return ARGS with sensitive values redacted for display."
+  (let ((remaining args)
+        (redacted nil))
+    (while remaining
+      (let ((arg (pop remaining)))
+        (push arg redacted)
+        (when (and (member arg '("-H" "--header" "-b" "--cookie"))
+                   remaining)
+          (push (overleaf-project--redact-sensitive-argument
+                 (pop remaining))
+                redacted))))
+    (nreverse (mapcar #'overleaf-project--redact-sensitive-argument redacted))))
+
+(defun overleaf-project--redact-sensitive-text (text)
+  "Return TEXT with sensitive HTTP header values redacted."
+  (when text
+    (replace-regexp-in-string
+     "\\(\\(?:Cookie\\|Authorization\\|X-Csrf-Token\\):[[:space:]]*\\)[^\r\n]*"
+     "\\1<redacted>"
+     text
+     nil
+     nil)))
+
+(defun overleaf-project--command-error-message (program args output)
+  "Return a safe error message for PROGRAM ARGS and command OUTPUT."
+  (format "%s %s failed: %s"
+          program
+          (string-join (overleaf-project--redact-command-args args) " ")
+          (let ((safe-output
+                 (overleaf-project--redact-sensitive-text output)))
+            (if (or (null safe-output) (string-empty-p safe-output))
+                "unknown error"
+              safe-output))))
+
+(defun overleaf-project--command-result-or-error
+    (program args status output noerror)
+  "Return a command result or signal a safe command error."
+  (unless (or noerror (and (integerp status) (zerop status)))
+    (error "%s"
+           (overleaf-project--command-error-message
+            program
+            args
+            output)))
+  (make-overleaf-project--command-result
+   :status status
+   :output output))
 
 (defun overleaf-project--background-thread-p ()
   "Return non-nil when running outside Emacs' main thread."
@@ -830,14 +893,12 @@ DIRECTORY, ENV, and NOERROR have the same meaning as in
                        (string-trim-right
                         (apply #'concat (nreverse output-chunks))))
                (mutex-unlock mutex))
-             (unless (or noerror (and (integerp status) (zerop status)))
-               (error "%s %s failed: %s"
-                      program
-                      (string-join args " ")
-                      (if (string-empty-p output) "unknown error" output)))
-             (make-overleaf-project--command-result
-              :status status
-              :output output))))
+             (overleaf-project--command-result-or-error
+              program
+              args
+              status
+              output
+              noerror))))
       (when (and process (process-live-p process))
         (ignore-errors (delete-process process))))
     result))
@@ -861,20 +922,18 @@ NOERROR is non-nil."
           (let ((status (apply #'process-file program nil (current-buffer) nil args))
                 (output nil))
             (setq output (string-trim-right (buffer-string)))
-            (unless (or noerror (and (integerp status) (zerop status)))
-              (error "%s %s failed: %s"
-                     program
-                     (string-join args " ")
-                     (if (string-empty-p output) "unknown error" output)))
-            (make-overleaf-project--command-result
-             :status status
-             :output output)))))))
+            (overleaf-project--command-result-or-error
+             program
+             args
+             status
+             output
+             noerror)))))))
 
 (defun overleaf-project--git-run (repo args &optional env noerror)
   "Run Git with ARGS in REPO and return a command result.
 ENV is prepended to `process-environment'.  If NOERROR is non-nil, do
 not signal on non-zero exit status."
-  (overleaf-project--run overleaf-git-executable args repo env noerror))
+  (overleaf-project--run overleaf-project-git-executable args repo env noerror))
 
 (defun overleaf-project--git-output (repo &rest args)
   "Run Git with ARGS in REPO and return trimmed stdout."
@@ -908,11 +967,11 @@ not signal on non-zero exit status."
     repo))
 
 (defun overleaf-project--set-repo-url (repo &optional url)
-  "Set `overleaf-url' from REPO metadata or explicit URL, and return it."
-  (setq overleaf-url
+  "Set `overleaf-project-url' from REPO metadata or explicit URL, and return it."
+  (setq overleaf-project-url
         (or url
-            (and repo (overleaf-project--git-config-get repo "overleaf.url"))
-            (overleaf--url))))
+            (and repo (overleaf-project--git-config-get repo "overleaf-project.url"))
+            (overleaf-project--url))))
 
 (defun overleaf-project--read-repo-status (repo)
   "Return parsed `git status --porcelain' information for REPO."
@@ -1062,84 +1121,121 @@ Signal an error on detached HEAD."
   (overleaf-project--git-output
    repo
    "update-ref"
-   (or (overleaf-project--git-config-get repo "overleaf.baseRef")
+   (or (overleaf-project--git-config-get repo "overleaf-project.baseRef")
        overleaf-project-base-ref)
    revision))
 
 (defun overleaf-project--base-ref (repo)
   "Return the configured base ref for REPO."
-  (or (overleaf-project--git-config-get repo "overleaf.baseRef")
+  (or (overleaf-project--git-config-get repo "overleaf-project.baseRef")
       overleaf-project-base-ref))
 
 (defun overleaf-project--project-id (repo)
   "Return the configured Overleaf project id for REPO."
-  (or (overleaf-project--git-config-get repo "overleaf.projectId")
+  (or (overleaf-project--git-config-get repo "overleaf-project.projectId")
       (user-error "Repository %s is not configured as an Overleaf project" repo)))
 
 (defun overleaf-project--project-name (repo)
   "Return the configured Overleaf project name for REPO."
-  (or (overleaf-project--git-config-get repo "overleaf.projectName")
+  (or (overleaf-project--git-config-get repo "overleaf-project.projectName")
       (overleaf-project--project-id repo)))
 
 (defun overleaf-project--managed-repo-p (repo)
   "Return non-nil if REPO stores Overleaf project metadata."
-  (not (null (overleaf-project--git-config-get repo "overleaf.projectId"))))
+  (not (null (overleaf-project--git-config-get repo "overleaf-project.projectId"))))
 
 (defun overleaf-project--write-repo-metadata (repo project)
   "Persist PROJECT metadata inside REPO."
   (overleaf-project--git-config-set
-   repo "overleaf.projectId" (plist-get project :id))
+   repo "overleaf-project.projectId" (plist-get project :id))
   (overleaf-project--git-config-set
-   repo "overleaf.projectName" (plist-get project :name))
+   repo "overleaf-project.projectName" (plist-get project :name))
   (overleaf-project--git-config-set
-   repo "overleaf.url" (overleaf--url))
+   repo "overleaf-project.url" (overleaf-project--url))
   (overleaf-project--git-config-set
-   repo "overleaf.baseRef" overleaf-project-base-ref))
+   repo "overleaf-project.baseRef" overleaf-project-base-ref))
+
+;;;; Log context
+
+(defun overleaf-project--log-context-for-repo (&optional repo)
+  "Return a log context plist for managed REPO."
+  (when repo
+    (overleaf-project-log-make-context
+     :project-id (overleaf-project--git-config-get repo "overleaf-project.projectId")
+     :project-name (overleaf-project--git-config-get repo "overleaf-project.projectName")
+     :repo repo
+     :url (or (overleaf-project--git-config-get repo "overleaf-project.url")
+              (overleaf-project--url)))))
+
+(defun overleaf-project--log-context-for-project
+    (project &optional repo)
+  "Return a log context plist for PROJECT and optional REPO."
+  (overleaf-project-log-make-context
+   :project-id (plist-get project :id)
+   :project-name (plist-get project :name)
+   :repo repo
+   :url (overleaf-project--url)))
+
+(defun overleaf-project--log-default-context ()
+  "Return the default Overleaf log context for `default-directory'."
+  (or (when-let* ((repo (ignore-errors (overleaf-project-root default-directory))))
+        (overleaf-project--log-context-for-repo repo))
+      (overleaf-project-log-make-context :url (overleaf-project--url))))
+
+(setq overleaf-project-log-context-function
+      #'overleaf-project--log-default-context)
+
+(defmacro overleaf-project--with-repo-log-context (repo &rest body)
+  "Run BODY with REPO metadata as the Overleaf log context."
+  (declare (indent 1) (debug (form body)))
+  `(overleaf-project-log-with-context
+    (overleaf-project--log-context-for-repo ,repo)
+    ,@body))
 
 (defun overleaf-project--clear-pending-state (repo)
   "Remove all pending push/pull metadata from REPO."
-  (dolist (key '("overleaf.pendingOriginalBranch"
-                 "overleaf.pendingOriginalHead"
-                 "overleaf.pendingSyncBranch"
-                 "overleaf.pendingRemoteCommit"
-                 "overleaf.pendingAction"))
+  (dolist (key '("overleaf-project.pendingOriginalBranch"
+                 "overleaf-project.pendingOriginalHead"
+                 "overleaf-project.pendingSyncBranch"
+                 "overleaf-project.pendingRemoteCommit"
+                 "overleaf-project.pendingAction"))
     (overleaf-project--git-config-unset repo key)))
 
 (defun overleaf-project--set-pending-state
     (repo original-branch original-head sync-branch remote-commit action)
   "Persist a pending push/pull state inside REPO."
   (overleaf-project--git-config-set
-   repo "overleaf.pendingOriginalBranch" original-branch)
+   repo "overleaf-project.pendingOriginalBranch" original-branch)
   (overleaf-project--git-config-set
-   repo "overleaf.pendingOriginalHead" original-head)
+   repo "overleaf-project.pendingOriginalHead" original-head)
   (overleaf-project--git-config-set
-   repo "overleaf.pendingSyncBranch" sync-branch)
+   repo "overleaf-project.pendingSyncBranch" sync-branch)
   (overleaf-project--git-config-set
-   repo "overleaf.pendingRemoteCommit" remote-commit)
+   repo "overleaf-project.pendingRemoteCommit" remote-commit)
   (overleaf-project--git-config-set
-   repo "overleaf.pendingAction" (symbol-name action)))
+   repo "overleaf-project.pendingAction" (symbol-name action)))
 
 (defun overleaf-project--set-pending-pull-state (repo remote-commit)
   "Persist a pending pull state inside REPO recording REMOTE-COMMIT."
   (overleaf-project--git-config-set
-   repo "overleaf.pendingRemoteCommit" remote-commit)
+   repo "overleaf-project.pendingRemoteCommit" remote-commit)
   (overleaf-project--git-config-set
-   repo "overleaf.pendingAction" "pull"))
+   repo "overleaf-project.pendingAction" "pull"))
 
 (defun overleaf-project--pending-state (repo)
   "Return pending push/pull metadata for REPO, or nil."
   (when-let* ((action-str
-               (overleaf-project--git-config-get repo "overleaf.pendingAction")))
+               (overleaf-project--git-config-get repo "overleaf-project.pendingAction")))
     (let ((action (intern action-str)))
       `(:action ,action
-        :sync-branch
-        ,(overleaf-project--git-config-get repo "overleaf.pendingSyncBranch")
-        :original-branch
-        ,(overleaf-project--git-config-get repo "overleaf.pendingOriginalBranch")
-        :original-head
-        ,(overleaf-project--git-config-get repo "overleaf.pendingOriginalHead")
-        :remote-commit
-        ,(overleaf-project--git-config-get repo "overleaf.pendingRemoteCommit")))))
+		:sync-branch
+		,(overleaf-project--git-config-get repo "overleaf-project.pendingSyncBranch")
+		:original-branch
+		,(overleaf-project--git-config-get repo "overleaf-project.pendingOriginalBranch")
+		:original-head
+		,(overleaf-project--git-config-get repo "overleaf-project.pendingOriginalHead")
+		:remote-commit
+		,(overleaf-project--git-config-get repo "overleaf-project.pendingRemoteCommit")))))
 
 ;;;; Local safety backups
 
@@ -1212,7 +1308,7 @@ disabled or the revision does not exist."
        (format "overleaf: backup before %s" reason)
        ref
        target)
-      (overleaf--debug "Created local backup ref %s at %s" ref target)
+      (overleaf-project--debug "Created local backup ref %s at %s" ref target)
       ref)))
 
 

@@ -27,19 +27,19 @@ Git 仓库——你按自己的节奏在本地提交，再整体推送/拉取快
 #+begin_src elisp
   (use-package overleaf-project
     :custom
-    (overleaf-url "https://www.overleaf.com"))
+    (overleaf-project-url "https://www.overleaf.com"))
 #+end_src
 
 本包要求 Emacs 29.4+，并依赖以下 Elisp 包：
 =websocket= 和 =webdriver=。
 
-包的 feature 名称为 ~overleaf-project~。交互命令和自定义变量继续使用
-~overleaf-~ 前缀。
+包的 feature 名称、交互命令和自定义变量都使用 ~overleaf-project-~ 前缀，
+以避免和 ~overleaf.el~ 冲突。
 
 如果你使用的是自建 Overleaf 实例，请设置服务器地址：
 
 #+begin_src elisp
-  (setopt overleaf-url "https://latex.example.edu")
+  (setopt overleaf-project-url "https://latex.example.edu")
 #+end_src
 
 ** 外部工具
@@ -77,23 +77,23 @@ make EMACS=/path/to/Emacs
 默认情况下，~overleaf-project-authenticate~ 会把 cookies 存到 Emacs 的
 auth-source 中。它会优先使用 ~auth-sources~ 里的第一个明文文件条目；
 如果没有，就回退到 =~/.authinfo=。本包会按 Overleaf host 维护一条受管
-理记录，并使用 =login overleaf-project= 和 =port overleaf-cookie=
+理记录，并使用 =login overleaf-project= 和 =port overleaf-project-cookie=
 进行定位。重新认证时，会替换这条记录，而不是不断追加过期副本。
 
 如果你更希望使用普通文件，可以设置：
 
 #+begin_src elisp
-  (setopt overleaf-cookie-storage "~/.overleaf-cookies")
+  (setopt overleaf-project-cookie-storage "~/.overleaf-project-cookies")
 #+end_src
 
 如果你希望 cookies 只保存在当前 Emacs 会话内存中，可以设置：
 
 #+begin_src elisp
-  (setopt overleaf-cookie-storage nil)
+  (setopt overleaf-project-cookie-storage nil)
 #+end_src
 
 如果你有完全自定义的需求，也仍然可以直接设置
-~overleaf-cookies~ 和 ~overleaf-save-cookies~，或者继续使用
+~overleaf-project-cookies~ 和 ~overleaf-project-save-cookies~，或者继续使用
 ~overleaf-project-read-cookies-from-file~ 与 ~overleaf-project-save-cookies-to-file~
 这对文件 helper。
 
@@ -123,7 +123,7 @@ M-x overleaf-project-clone
 
 这个命令会：
 
-- 使用配置好的 ~overleaf-url~，然后提示你选择项目
+- 使用配置好的 ~overleaf-project-url~，然后提示你选择项目
 - 下载完整项目 zip 包
 - 创建本地 Git 仓库
 - 提交导入后的初始快照
@@ -211,28 +211,21 @@ M-x overleaf-project-pull
 - 如果只有远端发生变化，就在本地对当前分支执行 fast-forward
 - 如果本地已经和远端快照一致，只更新基线 ref
 - 如果远端没有新变化，就提示当前无需拉取
-- 如果两边都发生了不同的变化，会创建新的合并分支并执行 =git merge=
+- 如果两边都发生了不同的变化，会停止并提示你先运行
+  ~overleaf-project-pull~
 
 clone、config、push 和 pull 命令都会把项目元数据存放在仓库的本地
 Git 配置中，因此之后无论你位于该仓库中的哪个子目录，都可以继续推送和拉取。
 
 * 冲突处理
 
-当本地与远端同时发生变化时，~overleaf-project-push~ 和
-~overleaf-project-pull~ 会创建一个类似下面这样的分支：
-
-#+begin_example
-overleaf-sync/20260412-153000
-#+end_example
-
-然后把下载下来的远端快照合并到这个分支。
+当本地与远端同时发生变化时，先运行 ~overleaf-project-pull~。
+该命令会把下载下来的远端快照直接合并到当前分支。
 
 如果合并产生冲突：
 
-- 原始分支不会被改动
-- 当前会继续停留在合并分支上
 - 你可以使用 Magit 或普通 Git 解决冲突
-- 创建好 merge commit 后，重新运行创建该分支的那个命令
+- 创建好 merge commit 后，运行 ~overleaf-project-push~ 上传合并结果
 
 这样冲突处理完全发生在 Git 中，而不是通过 ediff。
 
@@ -279,6 +272,8 @@ push：
 - ~overleaf-project-push-force~
 - ~overleaf-project-pull~
 - ~overleaf-project-browse-remote~
+- ~overleaf-project-log~
+- ~overleaf-project-log-clear~
 
 你也可以绑定内置的命令前缀图：
 
@@ -299,21 +294,26 @@ push：
 
 常用选项包括：
 
-- ~overleaf-url~：Overleaf 服务器地址
-- ~overleaf-cache-cookies~：是否缓存 cookies，而不是每次重新读取
-- ~overleaf-debug~：开启详细日志
+- ~overleaf-project-url~：Overleaf 服务器地址
+- ~overleaf-project-cache-cookies~：是否缓存 cookies，而不是每次重新读取
+- ~overleaf-project-debug~：开启详细日志
+- ~overleaf-project-log-buffer-name~：全局日志 buffer 名称
+- ~overleaf-project-log-echo~：是否同时在 minibuffer 显示日志条目
+- ~overleaf-project-log-time-format~：日志时间戳格式
 - ~overleaf-project-sync-auto-commit-message~：push 前自动本地提交时使用的消息
-- ~overleaf-project-sync-branch-prefix~：冲突分支名前缀
 - ~overleaf-project-socket-timeout~：websocket 获取项目树时的超时时间
-- ~overleaf-curl-connect-timeout~ 和 ~overleaf-curl-max-time~：限制
+- ~overleaf-project-curl-connect-timeout~ 和 ~overleaf-project-curl-max-time~：限制
   Overleaf HTTP 请求中同步 curl 调用最多阻塞多久
-- ~overleaf-git-executable~、~overleaf-curl-executable~ 和
-  ~overleaf-unzip-executable~：当这些工具不在 =PATH= 中时可手动指定
+- ~overleaf-project-git-executable~、~overleaf-project-curl-executable~ 和
+  ~overleaf-project-unzip-executable~：当这些工具不在 =PATH= 中时可手动指定
 
 * 说明
 
+- Overleaf 的信息、警告和 debug 日志都会写入全局
+  ~*overleaf-project-log*~ buffer。每条日志都带有时间、级别，以及当前可识别
+  的项目、仓库或 Overleaf URL 上下文，方便区分不同项目的日志。
 - 当前 push 会重建发生变化的远端文件，而不会保留原来的 Overleaf 文档 id。
   对于新的项目级工作流，这是可以接受的，但与旧的实时 buffer 集成方式不同。
 - ~overleaf-project-push-force~ 会用本地 ~HEAD~ 快照覆盖远端 Overleaf 文件。
 - 空目录不会被 Git 跟踪，因此在 push/pull 时也不会被保留。
-- 将 ~overleaf-debug~ 设为 ~t~ 可以开启详细日志。
+- 将 ~overleaf-project-debug~ 设为 ~t~ 可以开启详细 debug 日志。
