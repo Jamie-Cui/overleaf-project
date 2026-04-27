@@ -109,7 +109,7 @@ M-x overleaf-project-authenticate
 #+end_example
 
 If ~overleaf-project-clone~, ~overleaf-project-init~,
-~overleaf-project-push~, ~overleaf-project-push-force~, or
+~overleaf-project-push~, ~overleaf-project-overwrite-remote~, or
 ~overleaf-project-pull~ starts without valid cookies, the command asks
 in the minibuffer whether it should run ~overleaf-project-authenticate~
 immediately.  For cookies saved by ~overleaf-project-authenticate~, expiry is
@@ -163,13 +163,33 @@ Overleaf:
 
 - if there are staged changes, it commits them automatically
 - if there are unstaged or untracked files, it asks whether to stage all changes first
-- it then fetches the latest remote Overleaf snapshot and either uploads ~HEAD~ or opens a merge branch when both sides changed
+- it then fetches the latest remote Overleaf snapshot and uploads ~HEAD~
+  only when the remote has not diverged
 
 ~overleaf-project-pull~ requires a clean working tree and merges the
 latest Overleaf snapshot into the current branch.
 
+When used interactively, the commands collect minibuffer input and
+confirmation in the foreground, then run the long network, unzip, and
+Git work in the background by default.  This keeps Emacs responsive
+while clone, init, push, pull, remote overwrite, authentication, and Magit
+remote refreshes are waiting on Overleaf or external tools.  Set
+~overleaf-project-async-commands~ to ~nil~ if you need the older fully
+synchronous command behavior.
+
 Both commands still have to run from a normal branch rather than a
 detached ~HEAD~.
+
+By default, successful push operations also maintain a root-level
+~.overleaf-project-sync.json~ file on the Overleaf project.  That file
+records the last local Git commit/tree uploaded by this package.  It is
+removed from downloaded snapshots before Git comparisons, so it acts as
+remote sync bookkeeping rather than normal project content.
+
+The package also creates local safety refs under
+~refs/overleaf/backups/~ before sync steps that can move the current
+branch or complete pending sync state.  These refs keep previous local
+commits reachable independently of branch movement and reflog expiry.
 
 ** Push to Overleaf
 
@@ -190,20 +210,22 @@ Then it behaves as follows:
 - if only local changed, it uploads ~HEAD~ to Overleaf
 - if remote already matches ~HEAD~, it only updates the base ref
 - if only remote changed, it stops and asks you to run ~overleaf-project-pull~
-- if both changed differently, it creates a new merge branch, runs =git merge=, and pushes the merged result once the branch is resolved
+- if both changed differently, it stops and asks you to run
+  ~overleaf-project-pull~ first
 
-** Force push to Overleaf
+** Overwrite the Overleaf remote
 
 Run:
 
 #+begin_example
-M-x overleaf-project-push-force
+M-x overleaf-project-overwrite-remote
 #+end_example
 
 This command uses the same local auto-commit preparation as
 ~overleaf-project-push~, but always replaces the remote Overleaf project
-contents with the local ~HEAD~ snapshot.  Use it only when you
-intentionally want local files to win over the remote state.
+contents with the local ~HEAD~ snapshot.  Use it only as a recovery
+command when you intentionally want local files to replace the remote
+state.
 
 ** Pull from Overleaf
 
@@ -218,7 +240,9 @@ The command compares the same three states and then behaves as follows:
 - if only remote changed, it fast-forwards your current branch locally
 - if local already matches the remote snapshot, it only updates the base ref
 - if there are no remote changes, it reports that nothing needs to be pulled
-- if both changed differently, it creates a new merge branch and runs =git merge=
+- if both changed differently, it merges the remote snapshot into the
+  current branch; after a clean merge, run ~overleaf-project-push~ to
+  publish the merged result back to Overleaf
 
 The clone, config, push, and pull commands store project metadata in the
 repository's local Git config, so later pushes and pulls can run from
@@ -226,22 +250,16 @@ anywhere inside that repo.
 
 * Conflict handling
 
-When both local and remote changed, ~overleaf-project-push~ and
-~overleaf-project-pull~ create a
-branch named like:
-
-#+begin_example
-overleaf-sync/20260412-153000
-#+end_example
-
-It then merges the downloaded remote snapshot into that branch.
+When both local and remote changed, run ~overleaf-project-pull~ first.
+It merges the downloaded remote snapshot into the current branch with
+normal Git merge machinery.
 
 If the merge conflicts:
 
-- the original branch is left untouched
-- the merge branch stays checked out
+- the current branch is left in Git's normal conflicted merge state
 - you resolve conflicts with Magit or plain Git
-- after creating the merge commit, rerun the same command that created the branch
+- after creating the merge commit, run ~overleaf-project-push~ to upload
+  the merged result
 
 This keeps conflict resolution entirely inside Git instead of ediff.
 
@@ -257,7 +275,8 @@ automatically after each commit:
 #+end_src
 
 The hook only pushes repositories that already contain Overleaf project
-metadata.
+metadata.  With the default ~overleaf-project-async-commands~ setting,
+this hook starts the push in the background instead of blocking Emacs.
 
 * Magit Status
 
@@ -287,7 +306,7 @@ The main interactive commands are:
 - ~overleaf-project-clone~
 - ~overleaf-project-init~
 - ~overleaf-project-push~
-- ~overleaf-project-push-force~
+- ~overleaf-project-overwrite-remote~
 - ~overleaf-project-pull~
 - ~overleaf-project-browse-remote~
 
@@ -314,10 +333,19 @@ Useful options include:
 - ~overleaf-cache-cookies~ to force cookie reloads instead of caching
 - ~overleaf-debug~ for verbose logging
 - ~overleaf-project-sync-auto-commit-message~ for the automatic local checkpoint commit before pushing
-- ~overleaf-project-sync-branch-prefix~ to rename conflict branches
+- ~overleaf-project-async-commands~ to keep interactive commands and
+  push hooks from blocking Emacs during network, unzip, and Git work
+- ~overleaf-project-sync-metadata-enabled~ to control whether push writes
+  remote sync metadata
+- ~overleaf-project-sync-metadata-file~ to rename the reserved remote
+  metadata file
+- ~overleaf-project-local-backups-enabled~ to control whether sync
+  operations create local safety refs
+- ~overleaf-project-local-backup-ref-prefix~ to choose the backup ref
+  namespace
 - ~overleaf-project-socket-timeout~ if project tree websocket fetches need longer
 - ~overleaf-curl-connect-timeout~ and ~overleaf-curl-max-time~ to cap
-  blocking curl calls during Overleaf HTTP requests
+  curl calls during Overleaf HTTP requests
 - ~overleaf-git-executable~, ~overleaf-curl-executable~ and
   ~overleaf-unzip-executable~ if the tools are not on your =PATH=
 
@@ -326,8 +354,22 @@ Useful options include:
 - Push currently recreates changed remote files instead of preserving old
   Overleaf document ids.  That is acceptable for the new project-level
   workflow, but it is different from the old live buffer integration.
-- ~overleaf-project-push-force~ overwrites remote Overleaf files with the
-  local ~HEAD~ snapshot.
+- ~overleaf-project-overwrite-remote~ overwrites remote Overleaf files
+  with the local ~HEAD~ snapshot.
+- ~.overleaf-project-sync.json~ is reserved for remote sync metadata when
+  metadata support is enabled.  It should not be tracked in the local Git
+  repository.
+- Local safety refs can be inspected with:
+
+  #+begin_example
+  git show-ref refs/overleaf/backups
+  #+end_example
+
+  To recover one, create a normal branch from the backup ref:
+
+  #+begin_example
+  git branch recover-overleaf refs/overleaf/backups/...
+  #+end_example
 - Empty directories are not tracked by Git and therefore are not
   preserved by push/pull.
 - Verbose logging can be enabled by setting ~overleaf-debug~ to ~t~.
