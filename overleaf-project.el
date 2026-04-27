@@ -4,7 +4,7 @@
 ;; Author: Jamie Cui
 ;; Created: April 14, 2026
 ;; URL: https://github.com/Jamie-Cui/overleaf-project
-;; Package-Requires: ((emacs "29.4") (plz "0.9") (websocket "1.15") (webdriver "0.1"))
+;; Package-Requires: ((emacs "29.4") (websocket "1.15") (webdriver "0.1"))
 ;; Version: 2.0.0
 ;; Keywords: hypermedia, tex, tools
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -29,7 +29,6 @@
 (require 'cl-lib)
 (require 'json)
 (require 'mm-url)
-(require 'plz)
 (require 'subr-x)
 (require 'url-parse)
 (require 'webdriver)
@@ -99,6 +98,18 @@ The cookies are usually obtained and refreshed via
 (defcustom overleaf-curl-executable "curl"
   "Curl executable used for project download and upload."
   :type 'string)
+
+(defcustom overleaf-curl-connect-timeout 10
+  "Seconds to wait while establishing Overleaf curl connections.
+Set this to nil to let curl use its default connection timeout."
+  :type '(choice (integer :tag "Seconds")
+                 (const :tag "Use curl default" nil)))
+
+(defcustom overleaf-curl-max-time 45
+  "Maximum seconds to allow one Overleaf curl request to run.
+Set this to nil to let curl run without a package-level request timeout."
+  :type '(choice (integer :tag "Seconds")
+                 (const :tag "No package timeout" nil)))
 
 (defcustom overleaf-unzip-executable "unzip"
   "Unzip executable used to unpack downloaded projects."
@@ -893,12 +904,13 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
          (cached (gethash cache-key overleaf--csrf-cache)))
     (or (and (not refresh) cached)
         (let* ((project-page
-                (plz 'get
-                  (overleaf--project-page-url project-id)
-                  :headers
+                (overleaf-project--curl-request
+                 "GET"
+                 (overleaf--project-page-url project-id)
+                 (overleaf-project--format-curl-headers
                   `(("Cookie" . ,cookies)
                     ("Origin" . ,(overleaf--url))
-                    ("Referer" . ,(overleaf--project-page-url project-id)))))
+                    ("Referer" . ,(overleaf--project-page-url project-id))))))
                (token
                 (save-match-data
                   (when (string-match
@@ -918,21 +930,37 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
         "returned error: 403"
         (overleaf-project--command-result-output result))))
 
+(defun overleaf-project--curl-timeout-args ()
+  "Return timeout arguments shared by Overleaf curl commands."
+  (append
+   (when overleaf-curl-connect-timeout
+     (list "--connect-timeout"
+           (number-to-string overleaf-curl-connect-timeout)))
+   (when overleaf-curl-max-time
+     (list "--max-time"
+           (number-to-string overleaf-curl-max-time)))))
+
+(defun overleaf-project--curl-base-args ()
+  "Return common arguments shared by Overleaf curl commands."
+  (append
+   '("--fail" "--silent" "--show-error" "--location")
+   (overleaf-project--curl-timeout-args)))
+
 (defun overleaf-project--socket-cookies ()
   "Return cookies suitable for websocket access."
   (let* ((cookies (overleaf--get-cookies))
-         (response
-          (plz 'get
-            (format "%s/socket.io/socket.io.js" (overleaf--url))
-            :as 'response
-            :headers `(("Cookie" . ,cookies)
-                       ("Origin" . ,(overleaf--url)))))
-         (set-cookie (alist-get 'set-cookie (plz-response-headers response)))
+         (header-text
+          (overleaf-project--curl-header-text
+           "GET"
+           (format "%s/socket.io/socket.io.js" (overleaf--url))
+           (overleaf-project--format-curl-headers
+            `(("Cookie" . ,cookies)
+              ("Origin" . ,(overleaf--url))))))
          (gclb-cookie
-          (and set-cookie
+          (and header-text
                (save-match-data
-                 (when (string-match "\\(GCLB=.*?\\);" set-cookie)
-                   (match-string 1 set-cookie))))))
+                 (when (string-match "\\(GCLB=.*?\\);" header-text)
+                   (match-string 1 header-text))))))
     (if (and gclb-cookie (not (string-empty-p gclb-cookie)))
         (format "%s; %s" cookies gclb-cookie)
       cookies)))
@@ -940,7 +968,7 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 (defun overleaf-project--curl-download-args (url output-file headers)
   "Return curl argument list to download URL into OUTPUT-FILE with HEADERS."
   (append
-   '("--fail" "--silent" "--show-error" "--location")
+   (overleaf-project--curl-base-args)
    (apply #'append (mapcar (lambda (h) (list "-H" h)) headers))
    (list "--output" output-file url)))
 
@@ -954,8 +982,25 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
   "Run a curl request with METHOD to URL using HEADERS and optional BODY."
   (let ((args
          (append
-          '("--fail" "--silent" "--show-error" "--location")
+          (overleaf-project--curl-base-args)
           (list "-X" method)
+          (apply
+           #'append
+           (mapcar (lambda (header) (list "-H" header)) headers))
+          (when body
+            (list "--data-binary" body))
+          (list url))))
+    (overleaf-project--command-result-output
+     (overleaf-project--run overleaf-curl-executable args))))
+
+(defun overleaf-project--curl-header-text (method url headers &optional body)
+  "Run a curl request and return raw response headers as text.
+METHOD, URL, HEADERS, and optional BODY are passed through to curl.
+The response body is discarded."
+  (let ((args
+         (append
+          (overleaf-project--curl-base-args)
+          (list "-X" method "--dump-header" "-" "--output" null-device)
           (apply
            #'append
            (mapcar (lambda (header) (list "-H" header)) headers))
@@ -979,7 +1024,8 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
                  (overleaf-project--format-curl-headers
                   (overleaf-project--project-headers project-id))))
            (append
-            '("--fail" "--silent" "--show-error" "--location" "-X" "POST")
+            (overleaf-project--curl-base-args)
+            (list "-X" "POST")
             (apply #'append
                    (mapcar (lambda (header) (list "-H" header)) headers))
             (list
@@ -1070,12 +1116,14 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 (defun overleaf-project--create-folder (project-id parent-id name)
   "Create folder NAME below PARENT-ID on PROJECT-ID."
   (json-parse-string
-   (plz 'post
-     (format "%s/project/%s/folder" (overleaf--url) project-id)
-     :headers (append
-               (overleaf-project--project-headers project-id)
-               '(("Content-Type" . "application/json")))
-     :body (json-encode `(:parent_folder_id ,parent-id :name ,name)))
+   (overleaf-project--curl-request
+    "POST"
+    (format "%s/project/%s/folder" (overleaf--url) project-id)
+    (overleaf-project--format-curl-headers
+     (append
+      (overleaf-project--project-headers project-id)
+      '(("Content-Type" . "application/json"))))
+    (json-encode `(:parent_folder_id ,parent-id :name ,name)))
    :object-type 'plist
    :array-type 'list))
 
@@ -1145,15 +1193,16 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 (defun overleaf-project--fetch-tree (project-id)
   "Return PROJECT-ID's root folder plist via websocket."
   (let* ((cookies (overleaf-project--socket-cookies))
-         (response
-          (plz 'get
-            (format "%s/socket.io/1/?projectId=%s&esh=1&ssp=1"
-                    (overleaf--url)
-                    project-id)
-            :as 'response
-            :headers `(("Cookie" . ,cookies)
-                       ("Origin" . ,(overleaf--url)))))
-         (ws-id (car (string-split (plz-response-body response) ":")))
+         (response-body
+          (overleaf-project--curl-request
+           "GET"
+           (format "%s/socket.io/1/?projectId=%s&esh=1&ssp=1"
+                   (overleaf--url)
+                   project-id)
+           (overleaf-project--format-curl-headers
+            `(("Cookie" . ,cookies)
+              ("Origin" . ,(overleaf--url))))))
+         (ws-id (car (string-split response-body ":")))
          (ws-url
           (replace-regexp-in-string
            "^http" "ws"
