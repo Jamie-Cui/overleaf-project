@@ -1108,10 +1108,12 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
   (setq overleaf-url (or url (overleaf--url)))
   (let* ((cookies (overleaf--get-cookies))
          (project-page
-          (plz 'get
-            (format "%s/project" (overleaf--url))
-            :headers `(("Cookie" . ,cookies)
-                       ("Origin" . ,(overleaf--url)))))
+          (overleaf-project--curl-request
+           "GET"
+           (format "%s/project" (overleaf--url))
+           (overleaf-project--format-curl-headers
+            `(("Cookie" . ,cookies)
+              ("Origin" . ,(overleaf--url))))))
          (projects-json
           (save-match-data
             (unless (string-match
