@@ -5,6 +5,15 @@
 
 Chinese README: [[file:README.zh.org][README.zh.org]]
 
+Inspired by [[https://github.com/vale981/overleaf.el][vale981/overleaf.el]].
+
+The key difference from the original: ~overleaf.el~ provides a
+single-buffer live editing workflow where each save syncs one file in
+real time.  ~overleaf-project~ instead treats the whole Overleaf
+project as a Git repository — you commit locally at your own pace and
+push/pull entire snapshots, which makes conflict resolution and history
+management much more tractable.
+
 ~overleaf-project~ provides project-level Overleaf integration for Emacs:
 
 - clone a full Overleaf project to a local Git repository

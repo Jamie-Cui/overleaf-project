@@ -2,6 +2,13 @@
 
 English README: [[file:README.org][README.org]]
 
+本项目 inspired by [[https://github.com/vale981/overleaf.el][vale981/overleaf.el]]。
+
+与原项目的主要区别：~overleaf.el~ 提供单 buffer 实时编辑工作流，每次保存
+都会实时同步单个文件。~overleaf-project~ 则将整个 Overleaf 项目视为一个
+Git 仓库——你按自己的节奏在本地提交，再整体推送/拉取快照，冲突处理和历史
+管理因此更加可控。
+
 ~overleaf-project~ 为 Emacs 提供基于项目级别的 Overleaf 集成：
 
 - 将整个 Overleaf 项目克隆为本地 Git 仓库
