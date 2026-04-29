@@ -11,6 +11,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'url-expand)
 (require 'webdriver)
 (require 'webdriver-firefox)
 (require 'overleaf-project-core)
