@@ -85,6 +85,14 @@
           "Ignoring webdriver service cleanup error: %s"
           (error-message-string err)))))))
 
+(defmacro overleaf-project--with-webdriver-direct-connection (&rest body)
+  "Run BODY with local webdriver HTTP requests bypassing proxies."
+  (declare (indent 0) (debug t))
+  `(let ((url-proxy-services
+          (cons '("no_proxy" . "\\`\\(?:localhost\\|127\\.0\\.0\\.1\\)\\'")
+                (assq-delete-all "no_proxy" (copy-sequence url-proxy-services)))))
+     ,@body))
+
 (cl-defmacro overleaf-project--webdriver-wait-until-appears
     ((session xpath &optional (element-sym '_unused) (delay .1)) &rest body)
   "Wait until XPATH appears in SESSION, bind it to ELEMENT-SYM and run BODY."
@@ -192,41 +200,43 @@ If URL is nil, use `overleaf-project-url'.  Return the saved full cookie alist."
          ;; Re-authentication should not depend on previously saved cookies.
          ;; Using only the freshly captured cookie avoids failures from stale
          ;; or undecryptable cookie stores.
-         (let ((full-cookies nil))
-           (webdriver-service-start (oref session service))
-           (webdriver-session-start session)
-           (webdriver-goto-url session (concat (overleaf-project--url) "/login"))
-           (overleaf-project--message "Log in using the browser window...")
-           (overleaf-project--webdriver-wait-until-appears
-            (session "//button[@id='new-project-button-sidebar']"))
-           (let* ((project-link-selector
-                   (make-instance 'webdriver-by
-                                  :strategy "xpath"
-                                  :selector "//a[contains(@href, '/project/')]"))
-                  (first-project
-                   (ignore-errors
-                     (webdriver-find-element session project-link-selector)))
-                  (first-project-path
-                   (and first-project
-                        (overleaf-project--webdriver-project-url
-                         (webdriver-get-element-attribute
-                          session
-                          first-project
-                          "href"))))
-                  (cookies nil))
-             (when first-project-path
-               (webdriver-goto-url session first-project-path))
-             (setq cookies (webdriver-get-all-cookies session))
-             (setf (alist-get (overleaf-project--cookie-domain) full-cookies nil nil #'string=)
-                   (list (overleaf-project--webdriver-cookie-string cookies)
-                         (overleaf-project--webdriver-cookie-expiry cookies)))
-             (funcall overleaf-project-save-cookies
-                      (prin1-to-string full-cookies))
-             (overleaf-project--apply-authenticated-cookies
-              full-cookies
-              "Saved Overleaf cookies for %s")
-             full-cookies))
-       (overleaf-project--webdriver-session-stop session)))))
+         (overleaf-project--with-webdriver-direct-connection
+           (let ((full-cookies nil))
+             (webdriver-service-start (oref session service))
+             (webdriver-session-start session)
+             (webdriver-goto-url session (concat (overleaf-project--url) "/login"))
+             (overleaf-project--message "Log in using the browser window...")
+             (overleaf-project--webdriver-wait-until-appears
+              (session "//button[@id='new-project-button-sidebar']"))
+             (let* ((project-link-selector
+                     (make-instance 'webdriver-by
+                                    :strategy "xpath"
+                                    :selector "//a[contains(@href, '/project/')]"))
+                    (first-project
+                     (ignore-errors
+                       (webdriver-find-element session project-link-selector)))
+                    (first-project-path
+                     (and first-project
+                          (overleaf-project--webdriver-project-url
+                           (webdriver-get-element-attribute
+                            session
+                            first-project
+                            "href"))))
+                    (cookies nil))
+               (when first-project-path
+                 (webdriver-goto-url session first-project-path))
+               (setq cookies (webdriver-get-all-cookies session))
+               (setf (alist-get (overleaf-project--cookie-domain) full-cookies nil nil #'string=)
+                     (list (overleaf-project--webdriver-cookie-string cookies)
+                           (overleaf-project--webdriver-cookie-expiry cookies)))
+               (funcall overleaf-project-save-cookies
+                        (prin1-to-string full-cookies))
+               (overleaf-project--apply-authenticated-cookies
+                full-cookies
+                "Saved Overleaf cookies for %s")
+               full-cookies)))
+       (overleaf-project--with-webdriver-direct-connection
+         (overleaf-project--webdriver-session-stop session))))))
 
 ;;;###autoload
 (defun overleaf-project-authenticate (&optional url)
