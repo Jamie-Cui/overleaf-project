@@ -56,10 +56,12 @@ Project push/pull expects these executables to be available:
 - =curl=
 - =unzip=
 
-Optional authentication through the browser also needs =geckodriver= (https://github.com/mozilla/geckodriver).
-Each authentication attempt starts geckodriver on a free local port, so a
-stale driver already listening on the default port =4444= should not block
-re-authentication.
+The default webdriver authentication backend also needs =geckodriver=
+(https://github.com/mozilla/geckodriver).  Each webdriver authentication
+attempt starts geckodriver on a free local port, so a stale driver
+already listening on the default port =4444= should not block
+re-authentication.  The Firefox cookie import backend does not need
+geckodriver, but it does require an Emacs build with SQLite support.
 
 * Development
 
@@ -88,6 +90,25 @@ It uses the first plain file entry from ~auth-sources~, falling back to
 =~/.authinfo=.  The package keeps one Overleaf-managed record per host,
 using =login overleaf-project= and =port overleaf-project-cookie=.  Re-authentication
 replaces that managed record instead of appending stale copies.
+
+By default, authentication uses Selenium webdriver and asks you to log in
+through Firefox.  If you already have a normal Firefox profile logged in
+to Overleaf, you can import its existing cookies instead:
+
+#+begin_src elisp
+  (setopt overleaf-project-auth-backend 'firefox-cookies)
+#+end_src
+
+With this backend, ~overleaf-project-authenticate~ reads Firefox's
+default profile from =profiles.ini= and imports only cookies for the
+configured ~overleaf-project-url~.  If Firefox has no Overleaf session
+cookie, or if the session cookie is expired, the command fails with a
+message asking you to log in to Overleaf in Firefox and retry.  You can
+override profile discovery with:
+
+#+begin_src elisp
+  (setopt overleaf-project-firefox-profile "/path/to/firefox/profile")
+#+end_src
 
 If you prefer a plain file instead, set:
 
@@ -173,13 +194,13 @@ Overleaf:
 ~overleaf-project-pull~ requires a clean working tree and merges the
 latest Overleaf snapshot into the current branch.
 
-When used interactively, the commands collect minibuffer input and
-confirmation in the foreground, then run the long network, unzip, and
-Git work in the background by default.  This keeps Emacs responsive
-while clone, init, push, pull, remote overwrite, authentication, and Magit
-remote refreshes are waiting on Overleaf or external tools.  Set
-~overleaf-project-async-commands~ to ~nil~ if you need the older fully
-synchronous command behavior.
+By default, commands run synchronously.  If you set
+~overleaf-project-enable-async~ to non-nil, interactive commands collect
+minibuffer input and confirmation in the foreground, then run the long
+network, unzip, and Git work in the background.  This keeps Emacs
+responsive while clone, init, push, pull, remote overwrite,
+authentication, and Magit remote refreshes are waiting on Overleaf or
+external tools.
 
 Run ~M-x overleaf-project-force-stop~ to cancel all currently tracked
 background Overleaf operations.  It interrupts their external processes
@@ -285,8 +306,9 @@ automatically after each commit:
 #+end_src
 
 The hook only pushes repositories that already contain Overleaf project
-metadata.  With the default ~overleaf-project-async-commands~ setting,
-this hook starts the push in the background instead of blocking Emacs.
+metadata.  With the default synchronous setting, this hook blocks Emacs
+while the push runs.  Set ~overleaf-project-enable-async~ to non-nil if
+you want hook-driven pushes to run in the background.
 
 * Magit Status
 
@@ -299,13 +321,14 @@ If you want an Overleaf section inside =magit-status=, load the optional
     (overleaf-project-magit-setup))
 #+end_src
 
-For Overleaf-managed repositories, each =magit-status= refresh then also
-may start an asynchronous refresh of the remote Overleaf snapshot.  The
-automatic refresh is throttled by
-=overleaf-project-magit-auto-refresh-remote-interval= so ordinary Magit
-refreshes do not repeatedly download snapshots and trigger Overleaf rate
-limits.  When the download finishes, the status buffer refreshes again
-and shows the remote diff against the last synced base snapshot.
+For Overleaf-managed repositories, each =magit-status= refresh may also
+start a background refresh of the remote Overleaf snapshot when
+~overleaf-project-enable-async~ is non-nil.  The automatic refresh is
+throttled by =overleaf-project-magit-auto-refresh-remote-interval= so
+ordinary Magit refreshes do not repeatedly download snapshots and
+trigger Overleaf rate limits.  When the download finishes, the status
+buffer refreshes again and shows the remote diff against the last synced
+base snapshot.
 
 If you prefer to keep remote refresh manual, set
 =overleaf-project-magit-auto-refresh-remote= to =nil=.  You can still
@@ -347,6 +370,10 @@ The default bindings inside that map are:
 Useful options include:
 
 - ~overleaf-project-url~ for the Overleaf server URL
+- ~overleaf-project-auth-backend~ to choose webdriver authentication or
+  Firefox cookie import
+- ~overleaf-project-firefox-profile~ to override Firefox profile
+  auto-detection
 - ~overleaf-project-cache-cookies~ to force cookie reloads instead of caching
 - ~overleaf-project-debug~ for verbose logging
 - ~overleaf-project-log-buffer-name~ for the global log buffer name
@@ -354,8 +381,8 @@ Useful options include:
   the minibuffer
 - ~overleaf-project-log-time-format~ to customize log entry timestamps
 - ~overleaf-project-sync-auto-commit-message~ for the automatic local checkpoint commit before pushing
-- ~overleaf-project-async-commands~ to keep interactive commands and
-  push hooks from blocking Emacs during network, unzip, and Git work
+- ~overleaf-project-enable-async~ to keep interactive commands and push
+  hooks from blocking Emacs during network, unzip, and Git work
 - ~overleaf-project-magit-auto-refresh-remote-interval~ to throttle
   automatic Magit remote snapshot downloads
 - ~overleaf-project-sync-metadata-enabled~ to control whether push writes

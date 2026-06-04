@@ -1,11 +1,12 @@
 EMACS ?= emacs
-PACKAGE_INIT = (progn (require 'package) (package-initialize))
+PACKAGE_INIT = (progn (setq load-prefer-newer t) (require 'package) (package-initialize) (add-to-list 'load-path default-directory))
 EMACS_BATCH = $(EMACS) -Q --batch -L . --eval "$(PACKAGE_INIT)"
 MODULE_ELC_FILES = \
 	overleaf-project-log.elc \
 	overleaf-project-core.elc \
 	overleaf-project-http.elc \
 	overleaf-project-sync.elc \
+	overleaf-project-firefox.elc \
 	overleaf-project-auth.elc \
 	overleaf-project-commands.elc
 ELC_FILES = $(MODULE_ELC_FILES) overleaf-project.elc overleaf-project-magit.elc
@@ -28,7 +29,10 @@ overleaf-project-http.elc: overleaf-project-http.el overleaf-project-core.elc
 overleaf-project-sync.elc: overleaf-project-sync.el overleaf-project-core.elc overleaf-project-http.elc
 	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-sync.el
 
-overleaf-project-auth.elc: overleaf-project-auth.el overleaf-project-core.elc overleaf-project-http.elc
+overleaf-project-firefox.elc: overleaf-project-firefox.el overleaf-project-core.elc
+	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-firefox.el
+
+overleaf-project-auth.elc: overleaf-project-auth.el overleaf-project-core.elc overleaf-project-http.elc overleaf-project-firefox.elc
 	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-auth.el
 
 overleaf-project-commands.elc: overleaf-project-commands.el overleaf-project-core.elc overleaf-project-http.elc overleaf-project-sync.elc overleaf-project-auth.elc

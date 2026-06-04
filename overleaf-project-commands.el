@@ -15,6 +15,7 @@
 (require 'overleaf-project-http)
 (require 'overleaf-project-sync)
 
+(declare-function overleaf-project--async-enabled-p "overleaf-project-core")
 (declare-function overleaf-project--force-stop "overleaf-project-core")
 
 ;;;; Command helpers
@@ -346,7 +347,7 @@ When NOERROR is non-nil, demote setup and background errors to warnings."
 If URL is nil, use `overleaf-project-url'."
   (interactive)
   (if (and (called-interactively-p 'interactive)
-           (overleaf-project--async-command-enabled-p))
+           (overleaf-project--async-enabled-p))
       (overleaf-project--clone-async url target-directory)
     (overleaf-project--clone-1 url target-directory)))
 
@@ -359,7 +360,7 @@ snapshot used by later `overleaf-project-push' and
   (interactive)
   (let ((interactive-p (called-interactively-p 'interactive)))
     (if (and interactive-p
-             (overleaf-project--async-command-enabled-p))
+             (overleaf-project--async-enabled-p))
         (overleaf-project--init-async directory url)
       (overleaf-project--init-1 directory url interactive-p))))
 
@@ -388,9 +389,9 @@ useful for hooks such as `git-commit-post-finish-hook'."
         (user-error "Repository %s is not configured as an Overleaf project"
                     (or repo default-directory))))
      ((or (and (called-interactively-p 'interactive)
-               (overleaf-project--async-command-enabled-p))
+               (overleaf-project--async-enabled-p))
           (and noerror
-               (overleaf-project--async-command-enabled-p)))
+               (overleaf-project--async-enabled-p)))
       (overleaf-project--push-async repo noerror))
      (noerror
       (overleaf-project--with-repo-log-context repo
@@ -444,7 +445,7 @@ are replaced by the local `HEAD' snapshot."
   (interactive)
   (let* ((repo (overleaf-project--require-managed-repo directory)))
     (if (and (called-interactively-p 'interactive)
-             (overleaf-project--async-command-enabled-p))
+             (overleaf-project--async-enabled-p))
         (overleaf-project--overwrite-remote-async repo)
       (overleaf-project--overwrite-remote-1 repo nil nil))))
 
@@ -503,7 +504,7 @@ commit, then run `overleaf-project-push' to complete the sync."
   (interactive)
   (let* ((repo (overleaf-project--require-managed-repo directory)))
     (if (and (called-interactively-p 'interactive)
-             (overleaf-project--async-command-enabled-p))
+             (overleaf-project--async-enabled-p))
         (overleaf-project--pull-async repo)
       (overleaf-project--pull-1 repo nil))))
 
@@ -547,7 +548,7 @@ authentication."
            (overleaf-project--project-page-url
             (overleaf-project--project-id repo))))
       (if (and (called-interactively-p 'interactive)
-               (overleaf-project--async-command-enabled-p))
+               (overleaf-project--async-enabled-p))
           (overleaf-project--ensure-authenticated-async
            "selecting an Overleaf project"
            (lambda ()

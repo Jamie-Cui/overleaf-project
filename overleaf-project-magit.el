@@ -14,14 +14,17 @@
 (require 'overleaf-project)
 (require 'magit)
 
+(declare-function overleaf-project--async-enabled-p "overleaf-project-core")
+
 ;;;; Customization
 
 (defcustom overleaf-project-magit-auto-refresh-remote t
   "Whether `magit-status' refreshes should also refresh the Overleaf remote.
 
-When non-nil, refreshes of an Overleaf-managed `magit-status' buffer
-may start an asynchronous download of the latest remote snapshot.
-Automatic downloads are throttled by
+When non-nil and `overleaf-project-enable-async' is also non-nil,
+refreshes of an Overleaf-managed `magit-status' buffer may start a
+background download of the latest remote snapshot.  Automatic downloads
+are throttled by
 `overleaf-project-magit-auto-refresh-remote-interval'.  The follow-up
 refresh that displays the downloaded snapshot does not start another
 remote download."
@@ -44,7 +47,7 @@ a remote refresh."
   "SHA of the remote snapshot commit after `overleaf-project-magit-refresh-remote'.")
 
 (defvar-local overleaf-project-magit--refreshing nil
-  "Non-nil while an async remote refresh is in progress.")
+  "Non-nil while a remote refresh is in progress.")
 
 (defvar-local overleaf-project-magit--last-remote-refresh-time nil
   "Last time an Overleaf remote refresh started in this Magit buffer.")
@@ -121,10 +124,11 @@ IN-SYNC is non-nil when the base tree matches HEAD."
    (overleaf-project-magit--suppress-next-auto-refresh
     (setq overleaf-project-magit--suppress-next-auto-refresh nil))
    ((and overleaf-project-magit-auto-refresh-remote
+         (overleaf-project--async-enabled-p)
          (derived-mode-p 'magit-status-mode)
          (not overleaf-project-magit--refreshing)
          (overleaf-project-magit--auto-refresh-due-p))
-    (when-let ((repo (magit-toplevel)))
+    (when-let* ((repo (magit-toplevel)))
       (when (overleaf-project--managed-repo-p repo)
         (condition-case err
             (overleaf-project-magit-refresh-remote)
@@ -155,9 +159,10 @@ MESSAGE is displayed before refreshing the Magit buffer when non-nil."
             t))
 
 (defun overleaf-project-magit-refresh-remote ()
-  "Asynchronously download the remote Overleaf snapshot and show remote changes.
+  "Download the remote Overleaf snapshot and show remote changes.
 Downloads, extracts, creates a temporary commit, and refreshes the
-Magit buffer without doing the heavy work in the foreground."
+Magit buffer.  When `overleaf-project-enable-async' is non-nil, run the
+heavy work in the background."
   (interactive)
   (let* ((repo (or (magit-toplevel)
                    (user-error "Not inside a Git repository")))

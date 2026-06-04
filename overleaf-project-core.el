@@ -67,6 +67,13 @@ The cookies are usually obtained and refreshed via
   :type 'boolean
   :group 'overleaf-project)
 
+(defcustom overleaf-project-auth-backend 'webdriver
+  "Backend used by `overleaf-project-authenticate' to obtain cookies."
+  :type '(choice
+          (const :tag "Selenium webdriver" webdriver)
+          (const :tag "Import from Firefox profile" firefox-cookies))
+  :group 'overleaf-project)
+
 (defcustom overleaf-project-git-executable "git"
   "Git executable used for project operations."
   :type 'string
@@ -147,15 +154,17 @@ update does not produce the expected result."
   :type 'string
   :group 'overleaf-project)
 
-(defcustom overleaf-project-async-commands t
-  "Whether interactive Overleaf commands run long operations in the background.
+(defcustom overleaf-project-enable-async nil
+  "Whether Overleaf commands may run long operations in the background.
 
-When non-nil, commands such as `overleaf-project-clone',
+When nil, commands run synchronously by default.
+
+When non-nil, interactive commands such as `overleaf-project-clone',
 `overleaf-project-push', and `overleaf-project-pull' collect necessary
 user input in the foreground, then run network, unzip, and Git work on a
-background Emacs thread.  Lisp callers that invoke these commands
-noninteractively keep the synchronous behavior unless documented
-otherwise."
+background Emacs thread.  Hook-driven pushes may also run in the
+background.  Lisp callers that invoke these commands noninteractively
+keep the synchronous behavior unless documented otherwise."
   :type 'boolean
   :group 'overleaf-project)
 
@@ -278,9 +287,9 @@ this variable directly only when you want custom persistence logic.")
   "Return non-nil if background Emacs threads are available."
   (fboundp 'make-thread))
 
-(defun overleaf-project--async-command-enabled-p ()
-  "Return non-nil when foreground commands should start background work."
-  (and overleaf-project-async-commands
+(defun overleaf-project--async-enabled-p ()
+  "Return non-nil when Overleaf operations may start background work."
+  (and overleaf-project-enable-async
        (not noninteractive)
        (overleaf-project--async-supported-p)))
 
@@ -481,7 +490,7 @@ this variable directly only when you want custom persistence logic.")
 When KEY is non-nil, only one operation with that key may run at a
 time.  ON-SUCCESS receives FUNCTION's return value in the foreground.
 ON-ERROR receives an error message string in the foreground."
-  (if (not (overleaf-project--async-command-enabled-p))
+  (if (not (overleaf-project--async-enabled-p))
       (condition-case err
           (let ((value (funcall function)))
             (when on-success

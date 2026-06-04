@@ -6,7 +6,7 @@
 
 ;;; Commentary:
 
-;; Webdriver-based Overleaf authentication.
+;; Overleaf authentication backends.
 
 ;;; Code:
 
@@ -15,8 +15,10 @@
 (require 'webdriver)
 (require 'webdriver-firefox)
 (require 'overleaf-project-core)
+(require 'overleaf-project-firefox)
 (require 'overleaf-project-http)
 
+(declare-function overleaf-project--async-enabled-p "overleaf-project-core")
 (declare-function overleaf-project--async-register-process "overleaf-project-core")
 (declare-function overleaf-project--async-unregister-process "overleaf-project-core")
 
@@ -25,8 +27,10 @@
 (defmacro overleaf-project--with-webdriver (&rest body)
   "Execute BODY if geckodriver is available."
   `(if (not (executable-find "geckodriver"))
-       (message-box
-        "Please install geckodriver to authenticate with Overleaf.")
+       (progn
+         (message-box
+          "Please install geckodriver to authenticate with Overleaf.")
+         (user-error "Required executable `geckodriver' was not found"))
      ,@body))
 
 ;; `webdriver-firefox' currently assumes geckodriver immediately prints a
@@ -163,18 +167,33 @@ MESSAGE is formatted with the current cookie domain when non-nil."
   (when message
     (overleaf-project--message message (overleaf-project--cookie-domain))))
 
-(defun overleaf-project--start-authentication-async
-    (&optional url on-success)
-  "Start browser authentication for URL in the background.
-ON-SUCCESS, when non-nil, is called after cookies are saved and applied."
-  (unless (executable-find "geckodriver")
-    (message-box
-     "Please install geckodriver to authenticate with Overleaf.")
-    (user-error "Required executable `geckodriver' was not found"))
+(defun overleaf-project--save-and-apply-authenticated-cookies
+    (full-cookies message)
+  "Save and apply FULL-COOKIES, then display MESSAGE."
   (unless (and (boundp 'overleaf-project-save-cookies)
                overleaf-project-save-cookies)
     (user-error
      "`overleaf-project-save-cookies' needs to be configured"))
+  (funcall overleaf-project-save-cookies (prin1-to-string full-cookies))
+  (overleaf-project--apply-authenticated-cookies full-cookies message)
+  full-cookies)
+
+(defun overleaf-project--authenticate-with-firefox-cookies (&optional url)
+  "Synchronously import Overleaf cookies from Firefox for URL."
+  (setq overleaf-project-url (or url (overleaf-project--url)))
+  (overleaf-project--save-and-apply-authenticated-cookies
+   (overleaf-project-firefox-cookies overleaf-project-url)
+   "Imported Overleaf cookies from Firefox for %s"))
+
+(defun overleaf-project--start-authentication-async
+    (&optional url on-success)
+  "Start authentication for URL in the background.
+ON-SUCCESS, when non-nil, is called after cookies are saved and applied."
+  (when (and (eq overleaf-project-auth-backend 'webdriver)
+             (not (executable-find "geckodriver")))
+    (message-box
+     "Please install geckodriver to authenticate with Overleaf.")
+    (user-error "Required executable `geckodriver' was not found"))
   (setq overleaf-project-url (or url (overleaf-project--url)))
   (overleaf-project--async-start
    (format "Overleaf authentication for %s" (overleaf-project--url-host))
@@ -183,13 +202,13 @@ ON-SUCCESS, when non-nil, is called after cookies are saved and applied."
    :key (format "auth:%s" (overleaf-project--url))
    :on-success
    (lambda (full-cookies)
-     (overleaf-project--apply-authenticated-cookies
-      full-cookies
-      "Authentication finished for %s")
+     (overleaf-project--apply-authenticated-cookies full-cookies nil)
+     (overleaf-project--message "Authentication finished for %s"
+                                (overleaf-project--cookie-domain))
      (when on-success
        (funcall on-success full-cookies)))))
 
-(defun overleaf-project--authenticate-1 (&optional url)
+(defun overleaf-project--authenticate-with-webdriver (&optional url)
   "Synchronously use selenium webdriver to log into URL and obtain cookies.
 If URL is nil, use `overleaf-project-url'.  Return the saved full cookie alist."
   (overleaf-project--with-webdriver
@@ -234,9 +253,7 @@ If URL is nil, use `overleaf-project-url'.  Return the saved full cookie alist."
                (setf (alist-get (overleaf-project--cookie-domain) full-cookies nil nil #'string=)
                      (list (overleaf-project--webdriver-cookie-string cookies)
                            (overleaf-project--webdriver-cookie-expiry cookies)))
-               (funcall overleaf-project-save-cookies
-                        (prin1-to-string full-cookies))
-               (overleaf-project--apply-authenticated-cookies
+               (overleaf-project--save-and-apply-authenticated-cookies
                 full-cookies
                 "Saved Overleaf cookies for %s")
                full-cookies)))
@@ -246,13 +263,24 @@ If URL is nil, use `overleaf-project-url'.  Return the saved full cookie alist."
             (oref (oref session service) process)))
          (overleaf-project--webdriver-session-stop session))))))
 
+(defun overleaf-project--authenticate-1 (&optional url)
+  "Synchronously authenticate to URL using `overleaf-project-auth-backend'."
+  (pcase overleaf-project-auth-backend
+    ('webdriver
+     (overleaf-project--authenticate-with-webdriver url))
+    ('firefox-cookies
+     (overleaf-project--authenticate-with-firefox-cookies url))
+    (_
+     (user-error "Unsupported `overleaf-project-auth-backend': %S"
+                 overleaf-project-auth-backend))))
+
 ;;;###autoload
 (defun overleaf-project-authenticate (&optional url)
-  "Use selenium webdriver to log into URL and obtain cookies.
+  "Obtain cookies for URL using `overleaf-project-auth-backend'.
 If URL is nil, use `overleaf-project-url'."
   (interactive)
   (if (and (called-interactively-p 'interactive)
-           (overleaf-project--async-command-enabled-p))
+           (overleaf-project--async-enabled-p))
       (overleaf-project--start-authentication-async url)
     (overleaf-project--authenticate-1 url)))
 
