@@ -7,8 +7,7 @@ MODULE_ELC_FILES = \
 	overleaf-project-http.elc \
 	overleaf-project-sync.elc \
 	overleaf-project-firefox.elc \
-	overleaf-project-auth.elc \
-	overleaf-project-commands.elc
+	overleaf-project-auth.elc
 ELC_FILES = $(MODULE_ELC_FILES) overleaf-project.elc overleaf-project-magit.elc
 
 .PHONY: all compile help clean
@@ -34,9 +33,6 @@ overleaf-project-firefox.elc: overleaf-project-firefox.el overleaf-project-core.
 
 overleaf-project-auth.elc: overleaf-project-auth.el overleaf-project-core.elc overleaf-project-http.elc overleaf-project-firefox.elc
 	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-auth.el
-
-overleaf-project-commands.elc: overleaf-project-commands.el overleaf-project-core.elc overleaf-project-http.elc overleaf-project-sync.elc overleaf-project-auth.elc
-	$(EMACS_BATCH) -f batch-byte-compile overleaf-project-commands.el
 
 overleaf-project.elc: overleaf-project.el $(MODULE_ELC_FILES)
 	$(EMACS_BATCH) -f batch-byte-compile overleaf-project.el

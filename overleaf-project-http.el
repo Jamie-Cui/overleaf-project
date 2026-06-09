@@ -1,6 +1,8 @@
 ;;; overleaf-project-http.el --- HTTP and remote tree helpers for overleaf-project -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2020-2026 Jamie Cui
+;; Author: Jamie Cui <jamie.cui@outlook.com>
+;; Assisted-by: Codex:GPT-5.5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; This file is not part of GNU Emacs.
 
@@ -108,28 +110,28 @@ If REFRESH is non-nil, bypass the cached token and fetch a fresh one."
 (defun overleaf-project--curl-timeout-args ()
   "Return timeout arguments shared by Overleaf curl commands."
   (append
-   (when overleaf-project-curl-connect-timeout
+   (when overleaf-project--curl-connect-timeout
      (list "--connect-timeout"
-           (number-to-string overleaf-project-curl-connect-timeout)))
-   (when overleaf-project-curl-max-time
+           (number-to-string overleaf-project--curl-connect-timeout)))
+   (when overleaf-project--curl-max-time
      (list "--max-time"
-           (number-to-string overleaf-project-curl-max-time)))))
+           (number-to-string overleaf-project--curl-max-time)))))
 
 (defun overleaf-project--curl-download-timeout-args ()
   "Return timeout arguments for project zip downloads."
   (append
-   (when overleaf-project-curl-connect-timeout
+   (when overleaf-project--curl-connect-timeout
      (list "--connect-timeout"
-           (number-to-string overleaf-project-curl-connect-timeout)))
-   (when overleaf-project-curl-download-max-time
+           (number-to-string overleaf-project--curl-connect-timeout)))
+   (when overleaf-project--curl-download-max-time
      (list "--max-time"
-           (number-to-string overleaf-project-curl-download-max-time)))
-   (when (and overleaf-project-curl-download-speed-limit
-              overleaf-project-curl-download-speed-time)
+           (number-to-string overleaf-project--curl-download-max-time)))
+   (when (and overleaf-project--curl-download-speed-limit
+              overleaf-project--curl-download-speed-time)
      (list "--speed-limit"
-           (number-to-string overleaf-project-curl-download-speed-limit)
+           (number-to-string overleaf-project--curl-download-speed-limit)
            "--speed-time"
-           (number-to-string overleaf-project-curl-download-speed-time)))))
+           (number-to-string overleaf-project--curl-download-speed-time)))))
 
 (defun overleaf-project--curl-base-args ()
   "Return common arguments shared by Overleaf curl commands."
@@ -703,12 +705,12 @@ event."
                  (cl-every #'stringp lines))
       (user-error "Could not read Overleaf doc text for %s" doc-id))
     `(:version ,version
-      :text ,(string-join
-              (mapcar
-               (lambda (line)
-                 (overleaf-project--decode-socketio-doc-line line doc-id))
-               lines)
-              "\n"))))
+               :text ,(string-join
+                       (mapcar
+                        (lambda (line)
+                          (overleaf-project--decode-socketio-doc-line line doc-id))
+                        lines)
+                       "\n"))))
 
 (defun overleaf-project--socketio-error-message (object)
   "Return a concise message for Socket.IO error OBJECT."
@@ -798,9 +800,9 @@ the remote document id and Overleaf edit history are preserved."
                   "applyOtUpdate"
                   doc-id
                   `(:doc ,doc-id
-                    :op ,op
-                    :v ,version
-                    :meta (:source "overleaf-project"))))
+                         :op ,op
+                         :v ,version
+                         :meta (:source "overleaf-project"))))
            (when-let* ((error-object (car ack)))
              (user-error
               "Could not update Overleaf doc %s through text OT: %s"

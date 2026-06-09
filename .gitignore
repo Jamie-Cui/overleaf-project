@@ -22,3 +22,4 @@ data
 /.codex
 .worktrees
 /docs/superpowers/plans/*.md
+/.agent-shell/

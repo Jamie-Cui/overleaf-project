@@ -1,6 +1,8 @@
 ;;; overleaf-project-auth.el --- Browser authentication for overleaf-project -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2020-2026 Jamie Cui
+;; Author: Jamie Cui <jamie.cui@outlook.com>
+;; Assisted-by: Codex:GPT-5.5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; This file is not part of GNU Emacs.
 

@@ -194,9 +194,7 @@ To keep cookies only in memory for the current Emacs session:
 #+end_src
 
 Advanced configurations may set ~overleaf-project-cookies~ and
-~overleaf-project-save-cookies~ directly, or use the file helpers
-~overleaf-project-read-cookies-from-file~ and
-~overleaf-project-save-cookies-to-file~.
+~overleaf-project-save-cookies~ directly.
 
 For cookies saved by ~overleaf-project-authenticate~, session expiry is
 checked from the locally saved session-cookie expiry before any network
@@ -407,8 +405,8 @@ integration:
 For Overleaf-managed repositories, each =magit-status= refresh may also
 start a background refresh of the remote Overleaf snapshot when
 ~overleaf-project-enable-async~ is non-nil.  Automatic refresh is
-throttled by ~overleaf-project-magit-auto-refresh-remote-interval~ so
-ordinary Magit refreshes do not repeatedly download snapshots.
+internally throttled so ordinary Magit refreshes do not repeatedly
+download snapshots.
 
 To keep remote refresh manual:
 
@@ -483,7 +481,6 @@ Important user options include:
 | ~overleaf-project-auth-backend~ | Authentication backend: ~webdriver~ or ~firefox-cookies~. |
 | ~overleaf-project-cookie-storage~ | Cookie storage backend: ~authinfo~, a file path, or nil. |
 | ~overleaf-project-firefox-profile~ | Explicit Firefox profile path for cookie import. |
-| ~overleaf-project-cache-cookies~ | Reuse loaded cookies instead of reloading storage each time. |
 | ~overleaf-project-enable-async~ | Run long interactive operations in background threads. |
 | ~overleaf-project-sync-auto-commit-message~ | Commit message for automatic local checkpoint commits before push. |
 | ~overleaf-project-sync-metadata-enabled~ | Enable the remote sync metadata file. |
@@ -491,20 +488,12 @@ Important user options include:
 | ~overleaf-project-local-backups-enabled~ | Create local safety refs during sync operations. |
 | ~overleaf-project-local-backup-ref-prefix~ | Ref namespace for local safety refs. |
 | ~overleaf-project-socket-timeout~ | Timeout for websocket project tree fetches. |
-| ~overleaf-project-curl-connect-timeout~ | Maximum time allowed for curl connection setup. |
-| ~overleaf-project-curl-max-time~ | Maximum time allowed for non-download curl requests. |
-| ~overleaf-project-curl-download-max-time~ | Maximum time allowed for project zip downloads; nil by default. |
-| ~overleaf-project-curl-download-speed-limit~ | Low-speed threshold for project zip downloads. |
-| ~overleaf-project-curl-download-speed-time~ | Seconds below the low-speed threshold before aborting a download. |
 | ~overleaf-project-git-executable~ | Git executable path. |
 | ~overleaf-project-curl-executable~ | Curl executable path. |
 | ~overleaf-project-unzip-executable~ | Unzip executable path. |
 | ~overleaf-project-debug~ | Enable verbose debug logging. |
-| ~overleaf-project-log-buffer-name~ | Global log buffer name. |
 | ~overleaf-project-log-echo~ | Echo log entries in the minibuffer. |
-| ~overleaf-project-log-time-format~ | Timestamp format for log entries. |
 | ~overleaf-project-magit-auto-refresh-remote~ | Automatically refresh remote snapshots from Magit. |
-| ~overleaf-project-magit-auto-refresh-remote-interval~ | Minimum seconds between automatic Magit remote refreshes. |
 
 Use =M-x customize-group RET overleaf-project RET= to inspect the full
 customization group.
@@ -512,10 +501,9 @@ customization group.
 * Logging
 
 Overleaf messages, warnings, and debug entries are written to the global
-~*overleaf-project-log*~ buffer by default.  Each entry includes a
-timestamp, log level, and the best available project, repository, or
-Overleaf URL context, which helps distinguish logs from multiple
-projects.
+~*overleaf-project-log*~ buffer.  Each entry includes a timestamp, log
+level, and the best available project, repository, or Overleaf URL
+context, which helps distinguish logs from multiple projects.
 
 Verbose debug entries can be enabled with:
 

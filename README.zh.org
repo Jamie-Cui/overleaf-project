@@ -176,9 +176,7 @@ cookies，并在找不到有效 Overleaf session cookie 时给出明确失败信
 #+end_src
 
 高级配置可以直接设置 ~overleaf-project-cookies~ 和
-~overleaf-project-save-cookies~，也可以使用文件 helper
-~overleaf-project-read-cookies-from-file~ 和
-~overleaf-project-save-cookies-to-file~。
+~overleaf-project-save-cookies~。
 
 对于 ~overleaf-project-authenticate~ 保存的 cookies，本包会在任何网络请求
 前基于本地保存的 session-cookie 过期时间检查会话是否有效。短生命周期的
@@ -366,9 +364,8 @@ M-x overleaf-project-force-stop
 #+end_src
 
 对于 Overleaf 管理的仓库，当 ~overleaf-project-enable-async~ 为非 nil 时，
-每次 =magit-status= 刷新也可能在后台刷新远端 Overleaf 快照。自动刷新会受
-~overleaf-project-magit-auto-refresh-remote-interval~ 节流，避免普通 Magit
-刷新反复下载快照。
+每次 =magit-status= 刷新也可能在后台刷新远端 Overleaf 快照。自动刷新会被
+内部节流，避免普通 Magit 刷新反复下载快照。
 
 若要保持手动远端刷新：
 
@@ -441,7 +438,6 @@ hook 会在 push 运行期间阻塞 Emacs。启用 ~overleaf-project-enable-asyn
 | ~overleaf-project-auth-backend~ | 认证后端：~webdriver~ 或 ~firefox-cookies~。 |
 | ~overleaf-project-cookie-storage~ | Cookie 存储后端：~authinfo~、文件路径或 nil。 |
 | ~overleaf-project-firefox-profile~ | Firefox cookie 导入使用的显式 profile 路径。 |
-| ~overleaf-project-cache-cookies~ | 复用已加载 cookies，而不是每次重新读取存储。 |
 | ~overleaf-project-enable-async~ | 在后台线程中运行耗时交互操作。 |
 | ~overleaf-project-sync-auto-commit-message~ | push 前自动本地 checkpoint commit 的提交信息。 |
 | ~overleaf-project-sync-metadata-enabled~ | 启用远端同步元数据文件。 |
@@ -449,27 +445,19 @@ hook 会在 push 运行期间阻塞 Emacs。启用 ~overleaf-project-enable-asyn
 | ~overleaf-project-local-backups-enabled~ | 同步操作期间创建本地安全 refs。 |
 | ~overleaf-project-local-backup-ref-prefix~ | 本地安全 refs 使用的 ref namespace。 |
 | ~overleaf-project-socket-timeout~ | websocket 获取项目树的超时时间。 |
-| ~overleaf-project-curl-connect-timeout~ | curl 建立连接允许的最长时间。 |
-| ~overleaf-project-curl-max-time~ | 非下载 curl 请求允许的最长时间。 |
-| ~overleaf-project-curl-download-max-time~ | 项目 zip 下载允许的最长时间，默认为 nil。 |
-| ~overleaf-project-curl-download-speed-limit~ | 项目 zip 下载的低速阈值。 |
-| ~overleaf-project-curl-download-speed-time~ | 下载低于低速阈值多久后中止。 |
 | ~overleaf-project-git-executable~ | Git 可执行文件路径。 |
 | ~overleaf-project-curl-executable~ | Curl 可执行文件路径。 |
 | ~overleaf-project-unzip-executable~ | Unzip 可执行文件路径。 |
 | ~overleaf-project-debug~ | 启用详细 debug 日志。 |
-| ~overleaf-project-log-buffer-name~ | 全局日志 buffer 名称。 |
 | ~overleaf-project-log-echo~ | 在 minibuffer 中同时显示日志条目。 |
-| ~overleaf-project-log-time-format~ | 日志条目的时间戳格式。 |
 | ~overleaf-project-magit-auto-refresh-remote~ | 从 Magit 自动刷新远端快照。 |
-| ~overleaf-project-magit-auto-refresh-remote-interval~ | Magit 自动远端刷新的最小间隔秒数。 |
 
 使用 =M-x customize-group RET overleaf-project RET= 查看完整 customization
 group。
 
 * 日志
 
-Overleaf 信息、警告和 debug 条目默认写入全局
+Overleaf 信息、警告和 debug 条目写入全局
 ~*overleaf-project-log*~ buffer。每条记录都包含时间戳、日志级别，以及当前
 可获得的项目、仓库或 Overleaf URL 上下文，便于区分多个项目的日志。
 

@@ -1,6 +1,8 @@
 ;;; overleaf-project-core.el --- Core helpers for overleaf-project -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2020-2026 Jamie Cui
+;; Author: Jamie Cui <jamie.cui@outlook.com>
+;; Assisted-by: Codex:GPT-5.5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; This file is not part of GNU Emacs.
 
@@ -62,11 +64,6 @@ The cookies are usually obtained and refreshed via
   :type 'string
   :group 'overleaf-project)
 
-(defcustom overleaf-project-cache-cookies t
-  "Whether to cache the cookies after obtaining them."
-  :type 'boolean
-  :group 'overleaf-project)
-
 (defcustom overleaf-project-auth-backend 'webdriver
   "Backend used by `overleaf-project-authenticate' to obtain cookies."
   :type '(choice
@@ -84,43 +81,20 @@ The cookies are usually obtained and refreshed via
   :type 'string
   :group 'overleaf-project)
 
-(defcustom overleaf-project-curl-connect-timeout 10
-  "Seconds to wait while establishing Overleaf curl connections.
-Set this to nil to let curl use its default connection timeout."
-  :type '(choice (integer :tag "Seconds")
-                 (const :tag "Use curl default" nil))
-  :group 'overleaf-project)
+(defconst overleaf-project--curl-connect-timeout 10
+  "Seconds to wait while establishing Overleaf curl connections.")
 
-(defcustom overleaf-project-curl-max-time 45
-  "Maximum seconds to allow one Overleaf curl request to run.
-Set this to nil to let curl run without a package-level request timeout."
-  :type '(choice (integer :tag "Seconds")
-                 (const :tag "No package timeout" nil))
-  :group 'overleaf-project)
+(defconst overleaf-project--curl-max-time 45
+  "Maximum seconds to allow one non-download Overleaf curl request to run.")
 
-(defcustom overleaf-project-curl-download-max-time nil
-  "Maximum seconds to allow one Overleaf project zip download to run.
-Set this to nil to avoid a total transfer timeout for project downloads.
-Downloads still use `overleaf-project-curl-connect-timeout' and the
-low-speed timeout settings."
-  :type '(choice (integer :tag "Seconds")
-                 (const :tag "No package timeout" nil))
-  :group 'overleaf-project)
+(defconst overleaf-project--curl-download-max-time nil
+  "Maximum seconds to allow one Overleaf project zip download to run.")
 
-(defcustom overleaf-project-curl-download-speed-limit 1024
-  "Minimum bytes per second expected during project zip downloads.
-When this and `overleaf-project-curl-download-speed-time' are non-nil,
-curl aborts downloads that stay below this speed for that many seconds."
-  :type '(choice (integer :tag "Bytes per second")
-                 (const :tag "Disable low-speed timeout" nil))
-  :group 'overleaf-project)
+(defconst overleaf-project--curl-download-speed-limit 1024
+  "Minimum bytes per second expected during project zip downloads.")
 
-(defcustom overleaf-project-curl-download-speed-time 30
-  "Seconds a project zip download may remain below the low-speed limit.
-See `overleaf-project-curl-download-speed-limit'."
-  :type '(choice (integer :tag "Seconds")
-                 (const :tag "Disable low-speed timeout" nil))
-  :group 'overleaf-project)
+(defconst overleaf-project--curl-download-speed-time 30
+  "Seconds a project zip download may remain below the low-speed limit.")
 
 (defcustom overleaf-project-unzip-executable "unzip"
   "Unzip executable used to unpack downloaded projects."
@@ -436,13 +410,13 @@ this variable directly only when you want custom persistence logic.")
 (defun overleaf-project--async-push-completion (completion)
   "Queue COMPLETION for foreground handling."
   (overleaf-project--with-async-mutex
-   (push completion overleaf-project--async-completions)))
+    (push completion overleaf-project--async-completions)))
 
 (defun overleaf-project--async-pop-completions ()
   "Return queued async completions in completion order."
   (overleaf-project--with-async-mutex
-   (prog1 (nreverse overleaf-project--async-completions)
-     (setq overleaf-project--async-completions nil))))
+    (prog1 (nreverse overleaf-project--async-completions)
+      (setq overleaf-project--async-completions nil))))
 
 (defun overleaf-project--async-drain-completions ()
   "Run foreground callbacks for completed async operations."
@@ -468,8 +442,8 @@ this variable directly only when you want custom persistence logic.")
                    (funcall callback
                             (overleaf-project--async-completion-value completion))
                  (overleaf-project--message "Finished %s"
-					    (overleaf-project--async-completion-name
-					     completion))))
+					                        (overleaf-project--async-completion-name
+					                         completion))))
               ('error
                (let ((message
                       (overleaf-project--async-completion-error completion)))
@@ -477,12 +451,12 @@ this variable directly only when you want custom persistence logic.")
                             (overleaf-project--async-completion-on-error completion)))
                      (funcall callback message)
                    (overleaf-project--warn "%s failed: %s"
-					   (overleaf-project--async-completion-name completion)
-					   message)))))
+					                       (overleaf-project--async-completion-name completion)
+					                       message)))))
           (error
            (overleaf-project--warn "%s callback failed: %s"
-				   (overleaf-project--async-completion-name completion)
-				   (error-message-string err)))))))
+				                   (overleaf-project--async-completion-name completion)
+				                   (error-message-string err)))))))
   (overleaf-project--async-stop-timer-if-idle))
 
 (defun overleaf-project--force-stop ()
@@ -720,7 +694,9 @@ ON-ERROR receives an error message string in the foreground."
     ('authinfo
      (overleaf-project--authinfo-read-secret nil nil nil nil))
     ((pred stringp)
-     (funcall (overleaf-project-read-cookies-from-file overleaf-project-cookie-storage)))
+     (with-temp-buffer
+       (insert-file-contents (expand-file-name overleaf-project-cookie-storage))
+       (read (string-trim (buffer-string)))))
     (_ nil)))
 
 (defun overleaf-project--save-configured-cookies (cookies)
@@ -729,17 +705,9 @@ ON-ERROR receives an error message string in the foreground."
     ('authinfo
      (overleaf-project--authinfo-write-secret nil nil nil nil cookies))
     ((pred stringp)
-     (funcall (overleaf-project-save-cookies-to-file overleaf-project-cookie-storage) cookies))
+     (with-temp-file (expand-file-name overleaf-project-cookie-storage)
+       (insert cookies)))
     (_ nil)))
-
-;;;###autoload
-(defun overleaf-project-read-cookies-from-file (file)
-  "Return a cookie loader function reading cookies from FILE.
-To be used with `overleaf-project-cookies'."
-  (lambda ()
-    (with-temp-buffer
-      (insert-file-contents (expand-file-name file))
-      (read (string-trim (buffer-string))))))
 
 (defun overleaf-project--normalize-cookie-entry (entry)
   "Normalize one cookie ENTRY into `(DOMAIN COOKIE-STRING EXPIRY)'."
@@ -779,17 +747,9 @@ To be used with `overleaf-project-cookies'."
    (t
     (error "Unsupported value for `overleaf-project-cookies': %S" cookies))))
 
-;;;###autoload
-(defun overleaf-project-save-cookies-to-file (file)
-  "Return a cookie saver function writing cookies to FILE.
-To be used with `overleaf-project-save-cookies'."
-  (lambda (cookies)
-    (with-temp-file (expand-file-name file)
-      (insert cookies))))
-
 (defun overleaf-project--get-full-cookies ()
   "Load the association list mapping domains to cookies."
-  (if (and overleaf-project--current-cookies overleaf-project-cache-cookies)
+  (if overleaf-project--current-cookies
       overleaf-project--current-cookies
     (condition-case err
         (setq overleaf-project--current-cookies
@@ -799,7 +759,7 @@ To be used with `overleaf-project-save-cookies'."
                  overleaf-project-cookies)))
       (error
        (overleaf-project--warn "Error while loading cookies: %s"
-			       (error-message-string err))
+			                   (error-message-string err))
        nil))))
 
 (defun overleaf-project--get-cookies ()
@@ -1388,31 +1348,14 @@ Signal an error on detached HEAD."
   "Run BODY with REPO metadata as the Overleaf log context."
   (declare (indent 1) (debug (form body)))
   `(overleaf-project-log-with-context
-    (overleaf-project--log-context-for-repo ,repo)
-    ,@body))
+       (overleaf-project--log-context-for-repo ,repo)
+     ,@body))
 
 (defun overleaf-project--clear-pending-state (repo)
-  "Remove all pending push/pull metadata from REPO."
-  (dolist (key '("overleaf-project.pendingOriginalBranch"
-                 "overleaf-project.pendingOriginalHead"
-                 "overleaf-project.pendingSyncBranch"
-                 "overleaf-project.pendingRemoteCommit"
+  "Remove pending pull metadata from REPO."
+  (dolist (key '("overleaf-project.pendingRemoteCommit"
                  "overleaf-project.pendingAction"))
     (overleaf-project--git-config-unset repo key)))
-
-(defun overleaf-project--set-pending-state
-    (repo original-branch original-head sync-branch remote-commit action)
-  "Persist a pending push/pull state inside REPO."
-  (overleaf-project--git-config-set
-   repo "overleaf-project.pendingOriginalBranch" original-branch)
-  (overleaf-project--git-config-set
-   repo "overleaf-project.pendingOriginalHead" original-head)
-  (overleaf-project--git-config-set
-   repo "overleaf-project.pendingSyncBranch" sync-branch)
-  (overleaf-project--git-config-set
-   repo "overleaf-project.pendingRemoteCommit" remote-commit)
-  (overleaf-project--git-config-set
-   repo "overleaf-project.pendingAction" (symbol-name action)))
 
 (defun overleaf-project--set-pending-pull-state (repo remote-commit)
   "Persist a pending pull state inside REPO recording REMOTE-COMMIT."
@@ -1422,19 +1365,12 @@ Signal an error on detached HEAD."
    repo "overleaf-project.pendingAction" "pull"))
 
 (defun overleaf-project--pending-state (repo)
-  "Return pending push/pull metadata for REPO, or nil."
+  "Return pending pull metadata for REPO, or nil."
   (when-let* ((action-str
                (overleaf-project--git-config-get repo "overleaf-project.pendingAction")))
-    (let ((action (intern action-str)))
-      `(:action ,action
-		:sync-branch
-		,(overleaf-project--git-config-get repo "overleaf-project.pendingSyncBranch")
-		:original-branch
-		,(overleaf-project--git-config-get repo "overleaf-project.pendingOriginalBranch")
-		:original-head
-		,(overleaf-project--git-config-get repo "overleaf-project.pendingOriginalHead")
-		:remote-commit
-		,(overleaf-project--git-config-get repo "overleaf-project.pendingRemoteCommit")))))
+    `(:action ,(intern action-str)
+		      :remote-commit
+		      ,(overleaf-project--git-config-get repo "overleaf-project.pendingRemoteCommit"))))
 
 ;;;; Local safety backups
 

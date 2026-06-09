@@ -1,6 +1,8 @@
 ;;; overleaf-project-firefox.el --- Firefox cookie import for overleaf-project -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Jamie Cui
+;; Author: Jamie Cui <jamie.cui@outlook.com>
+;; Assisted-by: Codex:GPT-5.5
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; This file is not part of GNU Emacs.
 
@@ -73,7 +75,7 @@ backend reads Firefox's profiles.ini and uses its default profile."
              ((and current
                    (string-match "\\`\\([^=]+\\)=\\(.*\\)\\'" line))
               (setf (plist-get current
-                                (plist-key (string-trim (match-string 1 line))))
+                               (plist-key (string-trim (match-string 1 line))))
                     (string-trim (match-string 2 line))))))
           (forward-line 1)))
       (finish-section))
@@ -173,28 +175,16 @@ backend reads Firefox's profiles.ini and uses its default profile."
      (overleaf-project-firefox--cookie-query hosts)
      hosts)))
 
-(defun overleaf-project-firefox--cookie-name (row)
-  "Return the Firefox cookie name from ROW."
-  (nth 0 row))
-
-(defun overleaf-project-firefox--cookie-value (row)
-  "Return the Firefox cookie value from ROW."
-  (nth 1 row))
-
-(defun overleaf-project-firefox--cookie-expiry (row)
-  "Return the Firefox cookie expiry from ROW."
-  (nth 4 row))
-
 (defun overleaf-project-firefox--cookie-expired-p (row now)
   "Return non-nil if Firefox cookie ROW is expired at NOW."
-  (let ((expiry (overleaf-project-firefox--cookie-expiry row)))
+  (let ((expiry (nth 4 row)))
     (and (integerp expiry)
          (> expiry 0)
          (<= expiry now))))
 
 (defun overleaf-project-firefox--session-cookie-p (row)
   "Return non-nil if Firefox cookie ROW is an Overleaf session cookie."
-  (let ((name (overleaf-project-firefox--cookie-name row)))
+  (let ((name (nth 0 row)))
     (and (stringp name)
          (string-match-p overleaf-project-auth-session-cookie-regexp name))))
 
@@ -203,8 +193,8 @@ backend reads Firefox's profiles.ini and uses its default profile."
   (let ((pairs
          (cl-loop
           for row in rows
-          for name = (overleaf-project-firefox--cookie-name row)
-          for value = (overleaf-project-firefox--cookie-value row)
+          for name = (nth 0 row)
+          for value = (nth 1 row)
           when (and (stringp name)
                     (not (string-empty-p name))
                     (stringp value))
@@ -218,7 +208,7 @@ backend reads Firefox's profiles.ini and uses its default profile."
   (let ((expiries
          (cl-loop
           for row in rows
-          for expiry = (overleaf-project-firefox--cookie-expiry row)
+          for expiry = (nth 4 row)
           when (and (overleaf-project-firefox--session-cookie-p row)
                     (integerp expiry)
                     (> expiry 0))
