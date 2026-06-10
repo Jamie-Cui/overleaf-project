@@ -37,8 +37,10 @@
   "Return the async lock key for REPO."
   (format "repo:%s" (directory-file-name (expand-file-name repo))))
 
-(defun overleaf-project--ensure-authenticated-async (action continuation)
-  "Ensure cookies are usable, then call CONTINUATION in the foreground.
+(defun overleaf-project--ensure-authenticated-async (op-desc continuation)
+  "Ensure cookies are usable before OP-DESC, then call CONTINUATION.
+OP-DESC is a user-facing operation description used in authentication
+error messages.
 When authentication is needed, run browser authentication in the
 background before calling CONTINUATION."
   (let ((state (overleaf-project--cookie-state)))
@@ -54,7 +56,7 @@ background before calling CONTINUATION."
             (user-error
              "%s Run `overleaf-project-authenticate` before %s"
              reason
-             (or action "continuing"))
+             (or op-desc "continuing"))
           (overleaf-project--start-authentication-async
            overleaf-project-url
            (lambda (_full-cookies)
@@ -72,7 +74,7 @@ background before calling CONTINUATION."
      (funcall continuation (overleaf-project--select-project projects)))))
 
 (defun overleaf-project--clone-target-directory (project target-directory)
-  "Return the target directory for cloning PROJECT."
+  "Return the TARGET-DIRECTORY for cloning PROJECT."
   (directory-file-name
    (expand-file-name
     (or target-directory
@@ -124,7 +126,7 @@ background before calling CONTINUATION."
           target))))))
 
 (defun overleaf-project--clone-sync (&optional url target-directory)
-  "Synchronously clone a full Overleaf project into TARGET-DIRECTORY."
+  "Synchronously clone a full Overleaf project from URL into TARGET-DIRECTORY."
   (let* ((url (or url (overleaf-project--url)))
          (project nil)
          (target nil))
@@ -137,7 +139,7 @@ background before calling CONTINUATION."
     (overleaf-project--clone-selected-project url project target)))
 
 (defun overleaf-project--clone-async (&optional url target-directory)
-  "Start an asynchronous clone into TARGET-DIRECTORY."
+  "Start an asynchronous clone from URL into TARGET-DIRECTORY."
   (let ((url (or url (overleaf-project--url))))
     (setq overleaf-project-url url)
     (overleaf-project--ensure-authenticated-async
@@ -160,7 +162,10 @@ background before calling CONTINUATION."
                :key (format "clone:%s" target))))))))))
 
 (defun overleaf-project--init-confirm-p (repo current-id current-name project)
-  "Return non-nil if initializing REPO for PROJECT should continue."
+  "Return non-nil if initializing REPO for PROJECT should continue.
+CURRENT-ID is the Overleaf project id currently recorded for REPO, or
+nil when REPO is not bound to a project.  CURRENT-NAME is the recorded
+project name used in confirmation prompts."
   (or (not current-id)
       (yes-or-no-p
        (if (string= current-id (plist-get project :id))
@@ -211,7 +216,7 @@ When CONFIRM is non-nil, ask before rebinding an existing project."
     (overleaf-project--init-selected-project repo project)))
 
 (defun overleaf-project--init-async (&optional directory url)
-  "Start an asynchronous Overleaf project initialization."
+  "Start an asynchronous Overleaf project (from URL) initialization at DIRECTORY."
   (let* ((repo (overleaf-project--require-repo directory))
          (current-id nil)
          (current-name nil))
@@ -253,7 +258,7 @@ When NOERROR is non-nil, do not prompt."
           (unless
               (y-or-n-p
                (format
-                "Repository %s has unstaged changes. Stage all changes and continue with Overleaf push? "
+                "Repository %s has unstaged changes.  Stage all changes and continue with Overleaf push? "
                 repo))
             (user-error
              "Overleaf push requires a clean working tree; stage all changes or stash them first"))
@@ -313,7 +318,7 @@ When NOERROR is non-nil, demote setup and background errors to warnings."
 	(when (not
 		   (yes-or-no-p
 			(format
-			 "Overwrite Overleaf project `%s' with local HEAD? This will replace remote files. "
+			 "Overwrite Overleaf project `%s' with local HEAD?"
 			 (overleaf-project--project-name repo))))
 	  (user-error "Aborted"))
 	(let ((unstaged-action
@@ -450,7 +455,7 @@ non-nil, assume the caller already checked authentication."
 
 ;;;###autoload
 (defun overleaf-project-overwrite-remote (&optional directory)
-  "Overwrite the configured Overleaf project with the current Git repo.
+  "Overwrite the configured Overleaf project with the current Git repo (at DIRECTORY).
 Like `overleaf-project-push', staged changes are committed automatically
 before upload.  Unlike `overleaf-project-push', remote Overleaf changes
 are replaced by the local `HEAD' snapshot.  Existing remote Overleaf
@@ -506,7 +511,7 @@ non-nil, assume the caller already checked authentication."
 
 ;;;###autoload
 (defun overleaf-project-pull (&optional directory)
-  "Pull the latest Overleaf snapshot into the current Git repo.
+  "Pull the latest Overleaf snapshot into the current Git repo at DIRECTORY.
 The working tree must be clean before pulling.
 
 When the local branch has diverged from the remote, performs a
@@ -549,7 +554,7 @@ authentication."
 
 ;;;###autoload
 (defun overleaf-project-browse-remote (&optional directory)
-  "Open the configured Overleaf project in a browser."
+  "Open the configured Overleaf project at DIRECTORY in a browser."
   (interactive)
   (let* ((repo (or (and directory (overleaf-project-root directory))
                    (overleaf-project-root default-directory))))

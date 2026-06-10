@@ -123,13 +123,13 @@ backend reads Firefox's profiles.ini and uses its default profile."
            (let* ((ini-file
                    (or (overleaf-project-firefox--profiles-ini-file)
                        (user-error
-                        "Could not find Firefox profiles.ini. Set `overleaf-project-firefox-profile' to a Firefox profile directory")))
+                        "Could not find Firefox profiles.ini.  Set `overleaf-project-firefox-profile' to a Firefox profile directory")))
                   (sections
                    (overleaf-project-firefox--parse-profiles-ini ini-file))
                   (section
                    (or (overleaf-project-firefox--default-profile-section sections)
                        (user-error
-                        "Could not determine the default Firefox profile. Set `overleaf-project-firefox-profile' manually"))))
+                        "Could not determine the default Firefox profile.  Set `overleaf-project-firefox-profile' manually"))))
              (overleaf-project-firefox--resolve-profile-path
               section
               (file-name-directory ini-file))))))
@@ -238,18 +238,18 @@ backend reads Firefox's profiles.ini and uses its default profile."
     (cond
      ((null rows)
       (user-error
-       "No Overleaf cookies found in Firefox profile %s. Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
+       "No Overleaf cookies found in Firefox profile %s.  Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
        profile
        (overleaf-project--url)))
      ((null session-rows)
       (user-error
-       "Found Overleaf cookies in Firefox profile %s, but no authenticated session cookie. Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
+       "Found Overleaf cookies in Firefox profile %s, but no authenticated session cookie.  Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
        profile
        (overleaf-project--url)))
      ((null valid-session-rows)
       (let ((expiry (overleaf-project-firefox--session-expiry session-rows)))
         (user-error
-         "Firefox Overleaf session cookies in profile %s are expired%s. Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
+         "Firefox Overleaf session cookies in profile %s are expired%s.  Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
          profile
          (if expiry
              (format " since %s"
@@ -258,7 +258,7 @@ backend reads Firefox's profiles.ini and uses its default profile."
          (overleaf-project--url))))
      ((null valid-rows)
       (user-error
-       "Firefox Overleaf cookies in profile %s are expired. Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
+       "Firefox Overleaf cookies in profile %s are expired.  Log in to %s in Firefox, then run `overleaf-project-authenticate' again"
        profile
        (overleaf-project--url)))
      (t

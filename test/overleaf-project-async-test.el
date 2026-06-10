@@ -44,15 +44,15 @@
       (should-not error-message)
       (should (equal (overleaf-project--async-start
                       "error"
-                      (lambda () (error "boom"))
+                      (lambda () (error "Boom"))
                       :on-error (lambda (message)
                                   (setq error-message message)))
-                     "boom"))
-      (should (equal error-message "boom"))
+                     "Boom"))
+      (should (equal error-message "Boom"))
       (should-error
        (overleaf-project--async-start
         "error"
-        (lambda () (error "uncaught")))
+        (lambda () (error "Uncaught")))
        :type 'error))))
 
 (ert-deftest overleaf-project-async-test-register-and-remove-tasks ()
@@ -101,12 +101,12 @@
           :name "operation-b"
           :key "key-b"
           :status 'error
-          :error "failed"
+          :error "Failed"
           :on-error (lambda (message)
                       (push (list :error message) events))))
         (overleaf-project--async-drain-completions)
         (should (equal (nreverse events)
-                       '((:success "value") (:error "failed"))))
+                       '((:success "value") (:error "Failed"))))
         (should-not warnings)
         (should-not (gethash "key-a" overleaf-project--async-locks))
         (should-not (gethash "key-b" overleaf-project--async-locks)))))

@@ -740,7 +740,7 @@ event."
           (not (plist-member update :op))))))
 
 (defun overleaf-project--wait-doc-update-applied (client doc-id)
-  "Wait until DOC-ID's queued OT update is applied or rejected."
+  "Wait on CLIENT until DOC-ID's queued OT update is applied or rejected."
   (let ((event
          (overleaf-project--socketio-wait
           client

@@ -93,7 +93,7 @@ content."
        (string-match-p "\\`[[:xdigit:]]\\{40,64\\}\\'" value)))
 
 (defun overleaf-project--remote-sync-metadata-commit (repo remote-tree)
-  "Return the Git commit recorded by remote metadata if it matches REMOTE-TREE."
+  "Return the Git commit recorded by REPO metadata if it matches REMOTE-TREE."
   (let* ((metadata overleaf-project--remote-sync-metadata)
          (commit (plist-get metadata :localCommit))
          (tree (plist-get metadata :localTree)))
@@ -322,7 +322,7 @@ changes without prompting, and `error' signals a user error."
          (unless
              (y-or-n-p
               (format
-               "Repository %s has unstaged changes. Stage all changes and continue with Overleaf push? "
+               "Repository %s has unstaged changes.  Stage all changes and continue with Overleaf push? "
                repo))
            (user-error
             "Overleaf push requires a clean working tree; stage all changes or stash them first"))))
@@ -623,7 +623,7 @@ not modify the working tree or perform a pull/push."
 
 (defun overleaf-project--ensure-pending-remote-unchanged
     (repo remote-root remote-tree action)
-  "Signal if REMOTE-ROOT no longer matches REMOTE-TREE for pending ACTION."
+  "Signal if REPO's REMOTE-ROOT no longer matches REMOTE-TREE for pending ACTION."
   (let ((current-remote-commit
          (overleaf-project--record-remote-snapshot repo remote-root)))
     (unless (string=

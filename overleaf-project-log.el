@@ -183,7 +183,8 @@ Later non-nil values replace earlier values."
             (goto-char (point-max))))))))
 
 (defun overleaf-project-log--emit (level echo-prefix format-string args)
-  "Log LEVEL entry and echo it with ECHO-PREFIX when enabled."
+  "Log LEVEL entry and echo it with ECHO-PREFIX when enabled.
+FORMAT-STRING and ARGS are passed to `format' to build the log text."
   (let ((text (apply #'format format-string args)))
     (overleaf-project-log--append level text)
     (when overleaf-project-log-echo

@@ -638,7 +638,9 @@ ON-ERROR receives an error message string in the foreground."
    " "))
 
 (defun overleaf-project--authinfo-entry-regexp (host user port)
-  "Return a regexp matching a managed authinfo entry."
+  "Return a regexp matching a managed authinfo entry.
+HOST, USER, and PORT are the authinfo machine, login, and port values
+to match."
   (format "^machine %s login %s port %s password .* %s t$"
           (regexp-quote (overleaf-project--authinfo-format-value host))
           (regexp-quote (overleaf-project--authinfo-format-value user))
@@ -646,7 +648,9 @@ ON-ERROR receives an error message string in the foreground."
           (regexp-quote overleaf-project--authinfo-record-marker)))
 
 (defun overleaf-project--authinfo-read-secret (source host user port)
-  "Read the Overleaf cookie secret from authinfo SOURCE."
+  "Read the Overleaf cookie secret from authinfo SOURCE.
+HOST, USER, and PORT identify the machine, login, and port entry to
+read."
   (let ((file (overleaf-project--authinfo-source-file source)))
     (when (file-readable-p file)
       (let* ((auth-sources (list file))
@@ -770,11 +774,11 @@ ON-ERROR receives an error message string in the foreground."
        (plist-get state :value))
       ('expired
        (user-error
-        "Cookies for %s are expired. Refresh them with `overleaf-project-authenticate' or manually"
+        "Cookies for %s are expired.  Refresh them with `overleaf-project-authenticate' or manually"
         (overleaf-project--url-host)))
       (_
        (user-error
-        "Cookies for %s are not set. Configure them with `overleaf-project-authenticate' or manually"
+        "Cookies for %s are not set.  Configure them with `overleaf-project-authenticate' or manually"
         (overleaf-project--url-host))))))
 
 (defun overleaf-project--cookie-state ()
@@ -816,8 +820,10 @@ does not contact the Overleaf server."
        (format "Cookies for %s are not set locally." host))
       (_ nil))))
 
-(defun overleaf-project--ensure-authenticated (&optional action)
-  "Ensure the current `overleaf-project-url' has usable cookies before ACTION.
+(defun overleaf-project--ensure-authenticated (&optional op-desc)
+  "Ensure the current `overleaf-project-url' has usable cookies before OP-DESC.
+OP-DESC is a user-facing operation description used in authentication
+error messages.
 If cookies are missing or expired, ask in the minibuffer whether to run
 `overleaf-project-authenticate' immediately."
   (let* ((state (overleaf-project--cookie-state))
@@ -834,7 +840,7 @@ If cookies are missing or expired, ask in the minibuffer whether to run
           (user-error
            "%s Run `overleaf-project-authenticate` before %s"
            reason
-           (or action "continuing"))
+           (or op-desc "continuing"))
         (overleaf-project-authenticate overleaf-project-url)
         (overleaf-project--get-cookies)
         t))))
@@ -855,7 +861,8 @@ If cookies are missing or expired, ask in the minibuffer whether to run
   "Perform a completing read with PROMPT over COLLECTION.
 
 COLLECTION is a list of plists with the shape
-`(:fields (DISPLAY-FIELD...) :data DATA)'."
+`(:fields (DISPLAY-FIELD...) :data DATA)'.
+PADDING is the minimum number of spaces between display fields."
   (let* ((num-fields (1- (length (plist-get (car collection) :fields))))
          (padding (or padding 2))
          (field-widths
@@ -983,7 +990,10 @@ COLLECTION is a list of plists with the shape
 
 (defun overleaf-project--command-result-or-error
     (program args status output noerror)
-  "Return a command result or signal a safe command error."
+  "Return a command result or signal a safe command error.
+PROGRAM and ARGS describe the command.  STATUS and OUTPUT are its exit
+status and captured output.  When NOERROR is non-nil, return a result
+even for non-zero exits."
   (unless (or noerror (and (integerp status) (zerop status)))
     (error "%s"
            (overleaf-project--command-error-message
