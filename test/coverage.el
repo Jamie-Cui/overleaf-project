@@ -39,13 +39,50 @@
 (defvar overleaf-project-coverage--instrumented nil
   "Alist mapping source file names to instrumented definition symbols.")
 
+(defconst overleaf-project-coverage--uninstrumented-symbols
+  '(("overleaf-project-core.el" . (overleaf-project--async-start)))
+  "Definitions restored without `testcover' instrumentation.
+
+Emacs 29's Edebug instrumentation can leave marker forms inside the
+lexical environment of `make-thread' closures.  Keep the async thread
+entry point uninstrumented so the batch coverage run remains portable
+across the Emacs versions used locally and in CI.")
+
+(defun overleaf-project-coverage--restore-definition (file symbol)
+  "Restore SYMBOL from FILE without `testcover' instrumentation."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name file default-directory))
+    (goto-char (point-min))
+    (let ((found nil)
+          form)
+      (condition-case nil
+          (while (not found)
+            (setq form (read (current-buffer)))
+            (when (and (consp form)
+                       (memq (car form) '(defun defmacro cl-defun cl-defmacro))
+                       (eq (cadr form) symbol))
+              (eval form t)
+              (setq found t)))
+        (end-of-file nil))
+      (unless found
+        (error "Could not restore %S from %s" symbol file)))))
+
 (defun overleaf-project-coverage--instrument-file (file)
   "Instrument FILE with `testcover' and remember its definition symbols."
-  (cl-letf (((symbol-function 'message)
-             (lambda (&rest _args) nil)))
-    (testcover-start file))
-  (push (cons file (mapcar #'car edebug-form-data))
-        overleaf-project-coverage--instrumented))
+  (let ((uninstrumented
+         (cdr (assoc file overleaf-project-coverage--uninstrumented-symbols)))
+        symbols)
+    (cl-letf (((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (testcover-start file))
+    (setq symbols
+          (cl-remove-if (lambda (symbol)
+                          (memq symbol uninstrumented))
+                        (mapcar #'car edebug-form-data)))
+    (dolist (symbol uninstrumented)
+      (overleaf-project-coverage--restore-definition file symbol))
+    (push (cons file symbols)
+          overleaf-project-coverage--instrumented)))
 
 (defun overleaf-project-coverage--entry-covered-p (entry)
   "Return non-nil if testcover ENTRY is considered covered."
