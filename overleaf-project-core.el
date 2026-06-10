@@ -926,7 +926,7 @@ COLLECTION is a list of plists with the shape
            "[^[:alnum:]]+"
            "-"
            (downcase (string-trim name))))))
-    (string-trim sanitized "-")))
+    (string-trim sanitized "-" "-")))
 
 (defun overleaf-project--ensure-executable (program)
   "Return PROGRAM if it is executable, otherwise signal an error."
@@ -953,9 +953,11 @@ COLLECTION is a list of plists with the shape
         (push arg redacted)
         (when (and (member arg '("-H" "--header" "-b" "--cookie"))
                    remaining)
-          (push (overleaf-project--redact-sensitive-argument
-                 (pop remaining))
-                redacted))))
+          (let ((value (pop remaining)))
+            (push (if (member arg '("-b" "--cookie"))
+                      "<redacted>"
+                    (overleaf-project--redact-sensitive-argument value))
+                  redacted)))))
     (nreverse (mapcar #'overleaf-project--redact-sensitive-argument redacted))))
 
 (defun overleaf-project--redact-sensitive-text (text)

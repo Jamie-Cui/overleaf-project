@@ -4,6 +4,9 @@
 #+title: overleaf-project
 #+subtitle: Git-based Overleaf project synchronization for Emacs
 
+[[https://github.com/Jamie-Cui/overleaf-project/actions/workflows/test.yml][https://github.com/Jamie-Cui/overleaf-project/actions/workflows/test.yml/badge.svg]]
+[[https://github.com/Jamie-Cui/overleaf-project/actions/workflows/coverage.yml][https://github.com/Jamie-Cui/overleaf-project/actions/workflows/coverage.yml/badge.svg]]
+
 Chinese README: [[file:README.zh.org][README.zh.org]]
 
 ~overleaf-project~ integrates Emacs with Overleaf at the project level.  It
@@ -524,6 +527,8 @@ The repository includes a small =Makefile= for local validation:
 
 #+begin_example
 make
+make test
+make coverage
 make help
 make clean
 #+end_example
@@ -541,11 +546,39 @@ emacs -Q --batch -L . --eval "(progn (require 'package) (package-initialize))" -
 emacs -Q --batch -L . --eval "(progn (require 'package) (package-initialize))" --eval "(require 'overleaf-project)"
 #+end_example
 
-There is currently no committed automated test suite.  For
-sync-related changes, validate clone, init, push, pull, pending-state
-recovery, and Git conflict resolution against a real Overleaf session.
-For authentication changes, validate both webdriver authentication and
-Firefox cookie import when possible.
+The automated test suite uses ERT and is designed to run offline:
+
+#+begin_example
+make test
+#+end_example
+
+It covers pure helpers, cookie and HTTP boundary logic, local Git
+snapshot/state transitions, remote tree diffing with stubbed Overleaf
+API calls, command dispatch, async state handling, and small Magit
+integration helpers.  It intentionally does not contact Overleaf, start
+webdriver, or open a browser.
+
+For changes that affect the real service boundary, also validate clone,
+init, push, pull, pending-state recovery, and Git conflict resolution
+against a real Overleaf session.  For authentication changes, validate
+both webdriver authentication and Firefox cookie import when possible.
+
+Coverage is not currently wired into the default build.  Emacs includes
+the built-in =testcover= library.  To run the offline ERT suite under
+coverage instrumentation:
+
+#+begin_example
+make coverage
+make coverage COVERAGE_MIN=50
+#+end_example
+
+The target writes a tab-separated summary to
+=coverage/testcover-summary.tsv=.  The optional =COVERAGE_MIN= variable
+turns the report into a threshold check.  GitHub Actions also exposes a
+manual =workflow_dispatch= trigger that runs =make coverage= and uploads
+the summary artifact.  External packages such as =undercover.el= can
+report ERT coverage to hosted coverage services, but that is not part of
+the default CI path.
 
 * Acknowledgements
 

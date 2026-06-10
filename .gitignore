@@ -16,6 +16,7 @@ __pycache__
 auto
 activate
 data
+coverage
 .projectile*
 
 /overleaf-server
