@@ -311,6 +311,9 @@
     (should (gethash "main.tex" table))))
 
 (ert-deftest overleaf-project-test-firefox-profiles-ini ()
+  ;; When an [Install] section is present, its default profile is
+  ;; authoritative and wins over the legacy top-level `Default=1', which
+  ;; may point to a stale, empty profile.
   (overleaf-project-test--with-temp-dir dir
     (let ((ini (expand-file-name "profiles.ini" dir)))
       (with-temp-file ini
@@ -326,11 +329,25 @@
                         sections)))
         (should (equal (plist-get (car sections) :section) "Profile0"))
         (should (equal (plist-get default :path)
-                       "Profiles/default-release"))
+                       "Profiles/install-default"))
         (should (equal (overleaf-project-firefox--resolve-profile-path
                         default
                         dir)
-                       (expand-file-name "Profiles/default-release" dir))))))
+                       (expand-file-name "Profiles/install-default" dir))))))
+  ;; With no [Install] section, fall back to the legacy `Default=1' profile.
+  (overleaf-project-test--with-temp-dir dir
+    (let ((ini (expand-file-name "profiles.ini" dir)))
+      (with-temp-file ini
+        (insert "[Profile0]\n")
+        (insert "Name=default\n")
+        (insert "IsRelative=1\n")
+        (insert "Path=Profiles/default-release\n")
+        (insert "Default=1\n"))
+      (let* ((sections (overleaf-project-firefox--parse-profiles-ini ini))
+             (default (overleaf-project-firefox--default-profile-section
+                        sections)))
+        (should (equal (plist-get default :path)
+                       "Profiles/default-release")))))
   (let ((install-only '((:section "InstallABC"
                         :default "Profiles/install-default"))))
     (should (equal (plist-get

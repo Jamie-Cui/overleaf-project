@@ -89,22 +89,39 @@ backend reads Firefox's profiles.ini and uses its default profile."
   "Return non-nil if SECTION describes a Firefox install."
   (string-prefix-p "Install" (or (plist-get section :section) "")))
 
+(defun overleaf-project-firefox--install-default-section (sections)
+  "Return a profile section derived from a Firefox install default in SECTIONS.
+Firefox's dedicated-profile feature records the active profile in an
+\"[InstallXXX]\" section.  Its `Default' entry is a profile path,
+relative to the profiles.ini directory."
+  (when-let* ((install
+               (cl-find-if
+                (lambda (section)
+                  (and (overleaf-project-firefox--install-section-p section)
+                       (plist-get section :default)))
+                sections)))
+    (list :section (plist-get install :section)
+          :path (plist-get install :default)
+          :isrelative "1")))
+
+(defun overleaf-project-firefox--legacy-default-section (sections)
+  "Return the legacy top-level `Default=1' Firefox profile in SECTIONS."
+  (cl-find-if
+   (lambda (section)
+     (and (overleaf-project-firefox--profile-section-p section)
+          (string= (plist-get section :default) "1")))
+   sections))
+
 (defun overleaf-project-firefox--default-profile-section (sections)
-  "Return the default Firefox profile section from SECTIONS."
-  (or (cl-find-if
-       (lambda (section)
-         (and (overleaf-project-firefox--profile-section-p section)
-              (string= (plist-get section :default) "1")))
-       sections)
-      (when-let* ((install
-                   (cl-find-if
-                    (lambda (section)
-                      (and (overleaf-project-firefox--install-section-p section)
-                           (plist-get section :default)))
-                    sections)))
-        (list :section (plist-get install :section)
-              :path (plist-get install :default)
-              :isrelative "1"))))
+  "Return the default Firefox profile section from SECTIONS.
+
+Modern Firefox keeps a dedicated profile per install and records it in
+an \"[InstallXXX]\" section, which it treats as authoritative.  Prefer
+that profile over the legacy top-level `Default=1' profile, which can
+point to a stale, empty profile that no longer holds the user's
+cookies."
+  (or (overleaf-project-firefox--install-default-section sections)
+      (overleaf-project-firefox--legacy-default-section sections)))
 
 (defun overleaf-project-firefox--resolve-profile-path (section base-directory)
   "Return the absolute Firefox profile path for SECTION under BASE-DIRECTORY."
